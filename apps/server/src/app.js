@@ -32,6 +32,9 @@ function createApp(config) {
   const corsOptions = {
     origin: config.clientOrigins.length > 0 ? config.clientOrigins : true,
     credentials: true,
+    // Let cross-origin clients read Retry-After on 429s (web countdown #16).
+    // cors() runs before the routers, so limiter 429s carry these headers too.
+    exposedHeaders: ['Retry-After'],
   };
 
   app.use(cors(corsOptions));
