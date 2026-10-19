@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check:live": "node scripts/check-connection.mjs"
+    "check:live": "node scripts/check-connection.mjs",
+    "mock": "node scripts/mock-server.mjs"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.2",
+    "socket.io": "^4.8.4",
     "vite": "^8.3.4"
   }
 }
