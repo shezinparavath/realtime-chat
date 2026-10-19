@@ -30,7 +30,7 @@ export function AuthProvider({ children }) {
     setUser(null);
     setStatus('anonymous');
     setMeError(null);
-    setNotice(reason === 'expired' ? 'Your session has expired or is no longer valid. Please log in again.' : null);
+    setNotice(reason === 'expired' ? 'Session expired, please log in again' : null);
   }, []);
 
   // ANY 401 from the API -> logged out. Only shows the "expired" notice if we actually had a token

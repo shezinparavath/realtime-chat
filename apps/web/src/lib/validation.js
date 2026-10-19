@@ -7,12 +7,7 @@ export const PASSWORD_MIN = 8;
 export const PASSWORD_MAX = 128;
 const USERNAME_RE = /^[a-z0-9_.]+$/;
 
-/**
- * CONTRACT QUESTION (Q1): the contract says usernames are "stored lowercase" and matched
- * case-insensitively, but not whether signup should *reject* uppercase input or *accept and
- * lowercase* it. Until the contract says, the web client lowercases (and trims) before validating and
- * sending, so "Alice" is sent as "alice". Change only this function if the answer is "reject".
- */
+/** LOCKED ruling P2-2: lowercase first, then validate ("Bob" -> "bob"). Also trimmed. */
 export function normalizeSignupUsername(raw) {
   return String(raw ?? '').trim().toLowerCase();
 }
@@ -31,14 +26,13 @@ export function validateUsername(username) {
   return null;
 }
 
-/**
- * CONTRACT QUESTION (Q2): the contract does not define an email format rule beyond trim +
- * lowercase + unique. The client only checks for a minimal "something@something" shape and
- * leaves stricter checks to the server's VALIDATION_ERROR.
- */
+/** LOCKED ruling P2-1: after trim + lowercase, must match x@y.z and be at most 254 chars. */
+export const EMAIL_MAX = 254;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export function validateEmail(email) {
   if (!email) return 'Email is required.';
-  if (!/^[^\s@]+@[^\s@]+$/.test(email)) return 'Enter a valid email address.';
+  if (email.length > EMAIL_MAX) return `Email must be at most ${EMAIL_MAX} characters.`;
+  if (!EMAIL_RE.test(email)) return 'Enter a valid email address.';
   return null;
 }
 
@@ -89,4 +83,10 @@ export function serverErrorToFormErrors(err, knownFields) {
   const message = err?.message || 'Something went wrong.';
   if (field && knownFields.includes(field)) return { [field]: message };
   return { _form: message };
+}
+
+/** Timeouts / network failures (cold start, offline) get an explicit Retry button (LOCKED ruling P4-4). */
+const RETRYABLE = new Set(['TIMEOUT', 'NETWORK_ERROR', 'SERVER_ERROR']);
+export function withRetry(err, formErrors) {
+  return RETRYABLE.has(err?.code) ? { ...formErrors, _retry: true } : formErrors;
 }

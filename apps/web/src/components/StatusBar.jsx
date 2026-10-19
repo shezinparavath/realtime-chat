@@ -54,3 +54,17 @@ export function StatusBar({ showSocket }) {
     </footer>
   );
 }
+
+/**
+ * LOCKED ruling P4-6: thin "Reconnecting…" bar whenever the socket isn't connected after the
+ * first successful connect (no separate offline detection).
+ */
+export function ReconnectingBar() {
+  const { status, everConnected } = useSocketContext();
+  if (!everConnected || status === 'connected' || status === 'idle' || status === 'unauthorized') return null;
+  return (
+    <div className="reconnecting-bar" role="status" data-testid="reconnecting-bar">
+      Reconnecting…
+    </div>
+  );
+}

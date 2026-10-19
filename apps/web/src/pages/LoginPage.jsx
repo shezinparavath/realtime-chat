@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { Field, FormError, WakingHint } from '../components/Field.jsx';
-import { normalizeIdentifier, serverErrorToFormErrors, validateLogin } from '../lib/validation.js';
+import { normalizeIdentifier, serverErrorToFormErrors, validateLogin, withRetry } from '../lib/validation.js';
 import { navigate } from '../router.js';
 
 export function LoginPage() {
@@ -13,7 +13,7 @@ export function LoginPage() {
   const [slow, setSlow] = useState(false);
 
   async function onSubmit(e) {
-    e.preventDefault();
+    e?.preventDefault();
     const creds = { identifier: normalizeIdentifier(identifier), password };
     const v = validateLogin(creds);
     setErrors(v);
@@ -25,7 +25,7 @@ export function LoginPage() {
       navigate('/', { replace: true });
     } catch (err) {
       // 401 INVALID_CREDENTIALS -> form-level message (don't reveal which part was wrong).
-      setErrors(err.code === 'INVALID_CREDENTIALS' ? { _form: err.message || 'Invalid credentials.' } : serverErrorToFormErrors(err, ['identifier', 'password']));
+      setErrors(withRetry(err, err.code === 'INVALID_CREDENTIALS' ? { _form: err.message || 'Invalid credentials.' } : serverErrorToFormErrors(err, ['identifier', 'password'])));
       setSubmitting(false);
     }
   }
@@ -34,7 +34,7 @@ export function LoginPage() {
     <section className="card auth-card" aria-labelledby="login-title">
       <h2 id="login-title">Log in</h2>
       {notice && (
-        <p className="hint" role="status" data-testid="auth-notice">
+        <p className="banner" role="alert" data-testid="auth-notice">
           {notice}
         </p>
       )}
@@ -60,9 +60,14 @@ export function LoginPage() {
           disabled={submitting}
         />
         <FormError message={errors._form} />
+        {errors._retry && (
+          <button type="button" onClick={() => onSubmit()} data-testid="login-retry">
+            Retry
+          </button>
+        )}
         {submitting && slow && <WakingHint />}
-        <button type="submit" className="primary" disabled={submitting}>
-          {submitting ? 'Logging in…' : 'Log in'}
+        <button type="submit" className="primary" disabled={submitting} data-testid="login-submit">
+          {submitting ? (slow ? 'Waking server…' : 'Logging in…') : 'Log in'}
         </button>
       </form>
       <p className="muted">

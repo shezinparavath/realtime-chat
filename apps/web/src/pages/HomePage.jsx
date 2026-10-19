@@ -85,7 +85,12 @@ function UserSearch() {
         autoFocus
       />
       <div className="search-results" aria-live="polite">
-        {search.state === 'idle' && !input.trim() && <p className="muted">Type the start of a username to find someone.</p>}
+        {/* LOCKED ruling P4-1: empty/whitespace q -> no request, muted hint. */}
+        {search.state === 'idle' && !input.trim() && (
+          <p className="muted" data-testid="search-hint">
+            Search by username
+          </p>
+        )}
         {(search.state === 'loading' || pending) && input.trim() && <p className="muted">Searching…</p>}
         {search.state === 'loading' && search.slow && <WakingHint />}
         {search.state === 'error' && !pending && (

@@ -10,6 +10,7 @@ import {
   normalizeSignupUsername,
   serverErrorToFormErrors,
   validateSignup,
+  withRetry,
 } from '../lib/validation.js';
 import { navigate } from '../router.js';
 
@@ -23,7 +24,7 @@ export function SignupPage() {
   const [slow, setSlow] = useState(false);
 
   async function onSubmit(e) {
-    e.preventDefault();
+    e?.preventDefault();
     const fields = { email: normalizeEmail(email), username: normalizeSignupUsername(username), password };
     const v = validateSignup(fields);
     setErrors(v);
@@ -34,7 +35,7 @@ export function SignupPage() {
       await signup(fields, { onSlow: () => setSlow(true) });
       navigate('/', { replace: true });
     } catch (err) {
-      setErrors(serverErrorToFormErrors(err, ['email', 'username', 'password']));
+      setErrors(withRetry(err, serverErrorToFormErrors(err, ['email', 'username', 'password'])));
       setSubmitting(false);
     }
   }
@@ -76,9 +77,14 @@ export function SignupPage() {
           disabled={submitting}
         />
         <FormError message={errors._form} />
+        {errors._retry && (
+          <button type="button" onClick={() => onSubmit()} data-testid="signup-retry">
+            Retry
+          </button>
+        )}
         {submitting && slow && <WakingHint />}
         <button type="submit" className="primary" disabled={submitting}>
-          {submitting ? 'Creating account…' : 'Sign up'}
+          {submitting ? (slow ? 'Waking server…' : 'Creating account…') : 'Sign up'}
         </button>
       </form>
       <p className="muted">

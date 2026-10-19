@@ -11,6 +11,7 @@ import { API_URL, SLOW_THRESHOLD_MS, SOCKET_PATH } from './config.js';
  * status: 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'unauthorized' | 'error'
  * hello: last { message: 'welcome', socketId, userId } from the server.
  * socket: the live Socket instance (or null), for P3 messaging.
+ * everConnected: connected at least once with this token (P3: refetch on reconnect hooks off this + 'connect').
  */
 export function useSocket(token, { onUnauthorized } = {}) {
   const [status, setStatus] = useState(token ? 'connecting' : 'idle');
@@ -20,6 +21,8 @@ export function useSocket(token, { onUnauthorized } = {}) {
   const [lastError, setLastError] = useState(null);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [socket, setSocket] = useState(null);
+  // True once this token's socket has connected at least once (drives the "Reconnecting…" bar).
+  const [everConnected, setEverConnected] = useState(false);
   const onUnauthorizedRef = useRef(onUnauthorized);
   onUnauthorizedRef.current = onUnauthorized;
 
@@ -29,6 +32,7 @@ export function useSocket(token, { onUnauthorized } = {}) {
     setLastError(null);
     setReconnectAttempt(0);
     setSlow(false);
+    setEverConnected(false);
     if (!token) {
       setStatus('idle');
       setSocket(null);
@@ -55,6 +59,7 @@ export function useSocket(token, { onUnauthorized } = {}) {
       clearTimeout(slowTimer);
       setSlow(false);
       setStatus('connected');
+      setEverConnected(true);
       setLastError(null);
       setReconnectAttempt(0);
       markTransport();
@@ -102,5 +107,5 @@ export function useSocket(token, { onUnauthorized } = {}) {
     };
   }, [token]);
 
-  return { socket, status, slow, hello, transport, lastError, reconnectAttempt };
+  return { socket, status, slow, hello, transport, lastError, reconnectAttempt, everConnected };
 }

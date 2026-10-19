@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { ChatsProvider } from './chats/ChatsContext.jsx';
-import { StatusBar } from './components/StatusBar.jsx';
+import { ReconnectingBar, StatusBar } from './components/StatusBar.jsx';
 import { WakingHint } from './components/Field.jsx';
 import { API_URL_MISSING } from './config.js';
 import { ChatPage } from './pages/ChatPage.jsx';
@@ -57,6 +57,7 @@ function Shell() {
 
   return (
     <>
+      {authed && <ReconnectingBar />}
       <header className="app-header">
         <a href="#/" className="brand">
           Realtime Chat

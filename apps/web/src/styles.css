@@ -45,3 +45,5 @@ button.link { border: none; background: none; padding: 0; color: inherit; font-s
 .dot-ok, .dot-connected { background: #1a7f37; }
 .dot-loading, .dot-connecting, .dot-reconnecting { background: #bf8700; }
 .dot-error, .dot-unauthorized, .dot-disconnected { background: #cf222e; }
+.banner { background: #fff8c5; border: 1px solid #d4a72c; color: #7d4e00; border-radius: 6px; padding: 8px 12px; margin: 0 0 12px; }
+.reconnecting-bar { position: sticky; top: 0; z-index: 10; background: #fff8c5; color: #7d4e00; border-bottom: 1px solid #d4a72c; font-size: 0.8rem; text-align: center; padding: 2px 8px; }

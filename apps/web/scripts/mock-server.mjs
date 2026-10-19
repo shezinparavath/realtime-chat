@@ -121,7 +121,7 @@ async function route(req, res, url) {
     const email = typeof b.email === 'string' ? b.email.trim().toLowerCase() : '';
     const username = typeof b.username === 'string' ? b.username.trim().toLowerCase() : '';
     const password = typeof b.password === 'string' ? b.password : '';
-    if (!email || !/^[^\s@]+@[^\s@]+$/.test(email)) throw vErr('email', 'A valid email is required');
+    if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw vErr('email', 'A valid email is required');
     if (!USERNAME_RE.test(username)) throw vErr('username', 'Username must be 3–20 characters: a–z, 0–9, _ or .');
     if (password.length < 8 || password.length > 128) throw vErr('password', 'Password must be 8–128 characters');
     for (const u of users.values()) {
@@ -150,14 +150,14 @@ async function route(req, res, url) {
     const me = requireAuth(req);
     const q = (url.searchParams.get('q') || '').trim().toLowerCase();
     if (!q) return send(res, 200, { users: [] });
-    const found = [...users.values()].filter((u) => u.id !== me.id && u.username.startsWith(q)).slice(0, 20);
+    const found = [...users.values()].filter((u) => u.id !== me.id && u.username.startsWith(q)).sort((a, b) => a.username.localeCompare(b.username)).slice(0, 20);
     return send(res, 200, { users: found.map(publicUser) });
   }
 
   if (key === 'POST /chats') {
     const me = requireAuth(req);
     const { userId } = await readJson(req);
-    if (typeof userId !== 'string' || !userId) throw vErr('userId', 'userId is required');
+    if (typeof userId !== 'string' || !/^[a-f0-9]{24}$/i.test(userId)) throw vErr('userId', 'userId must be a valid id');
     if (userId === me.id) throw vErr('userId', 'You cannot start a chat with yourself');
     if (!users.has(userId)) throw new HttpError(404, 'NOT_FOUND', 'User not found');
     const existing = [...chats.values()].find((c) => c.participantIds.includes(me.id) && c.participantIds.includes(userId));
