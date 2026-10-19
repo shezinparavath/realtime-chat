@@ -28,7 +28,9 @@ function Shell() {
   if (status === 'checking') {
     body = (
       <section className="card">
-        <p className="muted">Restoring your session…</p>
+        <p className="muted" role="status" data-testid="session-checking">
+          Restoring your session…
+        </p>
         {meSlow && <WakingHint />}
       </section>
     );

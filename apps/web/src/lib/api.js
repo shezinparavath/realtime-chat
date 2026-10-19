@@ -3,7 +3,7 @@
 // - Every error (HTTP, network, timeout, bad JSON) is thrown as ApiError with the contract's
 //   { code, message, field } fields, so the UI has one shape to render.
 // - ANY 401 runs the registered unauthorized handler (clears token, back to login).
-import { API_URL, REQUEST_TIMEOUT_MS, SLOW_THRESHOLD_MS } from '../config.js';
+import { API_URL, MESSAGES_PAGE_SIZE, REQUEST_TIMEOUT_MS, SLOW_THRESHOLD_MS } from '../config.js';
 import { readToken } from './tokenStore.js';
 
 export class ApiError extends Error {
@@ -22,11 +22,16 @@ export function setUnauthorizedHandler(fn) {
   unauthorizedHandler = fn;
 }
 
+export const RATE_LIMITED_MESSAGE = 'Too many attempts, try again shortly';
 const FALLBACK_MESSAGES = {
   NETWORK_ERROR: 'Could not reach the server. Check your connection and try again.',
-  TIMEOUT: 'The server took too long to respond. It may still be waking up — try again.',
+  TIMEOUT: `The server didn't respond within ${REQUEST_TIMEOUT_MS / 1000}s. It may still be waking up. Try again.`,
   SERVER_ERROR: 'Something went wrong on the server. Please try again.',
 };
+
+/** Codes where repeating the same request can succeed (shown with a Retry button). */
+export const RETRYABLE_CODES = new Set(['NETWORK_ERROR', 'TIMEOUT', 'SERVER_ERROR', 'RATE_LIMITED', 'BAD_RESPONSE']);
+export const isRetryable = (err) => RETRYABLE_CODES.has(err?.code) || (err?.status >= 500);
 
 /**
  * apiRequest('/auth/login', { method: 'POST', body, auth: false, signal, onSlow })
@@ -83,6 +88,10 @@ export async function apiRequest(path, { method = 'GET', body, auth = true, sign
 
   if (!res.ok) {
     const e = data?.error;
+    // LOCKED hardening: RATE_LIMITED (HTTP 429). Always show the agreed text, even without a JSON body.
+    if (res.status === 429 || e?.code === 'RATE_LIMITED') {
+      throw new ApiError({ status: res.status, code: 'RATE_LIMITED', message: RATE_LIMITED_MESSAGE, field: e?.field });
+    }
     throw new ApiError({
       status: res.status,
       code: e?.code || (res.status >= 500 ? 'SERVER_ERROR' : `HTTP_${res.status}`),
@@ -111,3 +120,10 @@ export const searchUsers = (q, opts) => apiRequest(`/users/search?q=${encodeURIC
 export const createOrGetChat = (userId, opts) => apiRequest('/chats', { method: 'POST', body: { userId }, ...opts });
 
 export const listChats = (opts) => apiRequest('/chats', opts);
+
+/** GET /chats/:id/messages -> { messages: [Message] (oldest -> newest), hasMore }. Cursor = message id. */
+export const fetchMessages = (chatId, { before, limit = MESSAGES_PAGE_SIZE, ...opts } = {}) => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (before) params.set('before', before);
+  return apiRequest(`/chats/${encodeURIComponent(chatId)}/messages?${params}`, opts);
+};
