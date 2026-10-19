@@ -10,8 +10,8 @@ import { API_URL, SLOW_THRESHOLD_MS, SOCKET_PATH } from './config.js';
  * token = null -> no socket (status 'idle'). A new token tears down the old socket and opens a new one.
  * status: 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'unauthorized' | 'error'
  * hello: last { message: 'welcome', socketId, userId } from the server.
- * socket: the live Socket instance (or null), for P3 messaging.
- * everConnected: connected at least once with this token (P3: refetch on reconnect hooks off this + 'connect').
+ * socket: the live Socket instance (or null), used by the chat store.
+ * everConnected: connected at least once with this token (drives the Reconnecting… bar).
  */
 export function useSocket(token, { onUnauthorized } = {}) {
   const [status, setStatus] = useState(token ? 'connecting' : 'idle');

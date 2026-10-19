@@ -5,7 +5,7 @@ import { useSocket } from '../useSocket.js';
 /**
  * One authenticated Socket.IO connection for the whole app, keyed on the JWT:
  * connects after login, reconnects with the new token when it changes, disconnects on logout.
- * P3 (messaging) reads `socket` from here to emit `message:send` and listen for `message:new`.
+ * The chat store reads `socket` from here to emit `message:send` and listen for `message:new`.
  */
 const SocketContext = createContext(null);
 

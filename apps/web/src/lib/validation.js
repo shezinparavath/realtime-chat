@@ -4,7 +4,7 @@
 export const USERNAME_MIN = 3;
 export const USERNAME_MAX = 20;
 export const PASSWORD_MIN = 8;
-export const PASSWORD_MAX = 128;
+export const PASSWORD_MAX = 72;
 const USERNAME_RE = /^[a-z0-9_.]+$/;
 
 /** LOCKED ruling P2-2: lowercase first, then validate ("Bob" -> "bob"). Also trimmed. */
@@ -36,11 +36,15 @@ export function validateEmail(email) {
   return null;
 }
 
-/** Contract: 8–128 chars. Measured on the raw string (passwords are never trimmed). */
+/**
+ * Password rule (bcrypt limit ruling): 8–72 characters AND at most 72 bytes in UTF-8.
+ * Measured on the raw string (passwords are never trimmed).
+ */
+export const PASSWORD_MAX_BYTES = 72;
 export function validatePassword(password) {
   if (!password) return 'Password is required.';
-  if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX)
-    return `Password must be ${PASSWORD_MIN}–${PASSWORD_MAX} characters.`;
+  if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX || new TextEncoder().encode(password).length > PASSWORD_MAX_BYTES)
+    return 'Password must be 8–72 characters';
   return null;
 }
 
