@@ -20,3 +20,5 @@ export const MAX_MESSAGE_LENGTH = 2000;
 export const MESSAGES_PAGE_SIZE = 30;
 // LOCKED ruling P4-2: a send with no ack within this long is marked Failed.
 export const SEND_ACK_TIMEOUT_MS = 10000;
+// Socket.IO per-attempt connect timeout: same 70s cold-start limit as REST and /health.
+export const CONNECT_TIMEOUT_MS = 70000;

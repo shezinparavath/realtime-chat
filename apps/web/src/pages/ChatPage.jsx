@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { otherParticipant, useChats, validateMessageText } from '../chats/ChatsContext.jsx';
 import { WakingHint } from '../components/Field.jsx';
+import { useSocketContext } from '../socket/SocketContext.jsx';
 import { formatTime } from '../components/time.js';
 import { MAX_MESSAGE_LENGTH } from '../config.js';
 
@@ -11,7 +12,7 @@ const NEAR_BOTTOM_PX = 120;
 /** Chat view: header, history with load-older on scroll-up, pending bubbles, composer. */
 export function ChatPage({ chatId }) {
   const { user } = useAuth();
-  const { chatsById, loadChat, loadNewest, threads, setOpenChat } = useChats();
+  const { chatsById, loadChat, loadNewest, threads, setOpenChat, listState } = useChats();
   const chat = chatsById[chatId];
   const [meta, setMeta] = useState({ state: chat ? 'ok' : 'loading', error: null });
   const [attempt, setAttempt] = useState(0);
@@ -60,7 +61,14 @@ export function ChatPage({ chatId }) {
           </h2>
         )}
       </div>
-      {meta.state === 'loading' && !chat && <p className="muted">Loading chat…</p>}
+      {meta.state === 'loading' && !chat && (
+        <>
+          <p className="muted" role="status" data-testid="chat-loading">
+            Loading chat…
+          </p>
+          {listState.slow && <WakingHint />}
+        </>
+      )}
       {meta.state === 'error' && !chat && (
         <div role="alert">
           <p className="error">Could not load this chat: {meta.error}</p>
@@ -130,7 +138,9 @@ function Thread({ chatId, meId, otherName }) {
     <div className="thread" ref={scrollRef} onScroll={onScroll} data-testid="thread" aria-live="polite">
       {(!t || t.status === 'loading') && (
         <div className="thread-status">
-          <p className="muted">Loading messages…</p>
+          <p className="muted" role="status" data-testid="thread-loading">
+            Loading messages…
+          </p>
           {t?.slow && <WakingHint />}
         </div>
       )}
@@ -145,9 +155,12 @@ function Thread({ chatId, meId, otherName }) {
       {t?.status === 'ok' && (
         <>
           {t.olderLoading && (
-            <p className="muted thread-status" data-testid="older-loading">
-              Loading older messages…
-            </p>
+            <>
+              <p className="muted thread-status" role="status" data-testid="older-loading">
+                Loading older messages…
+              </p>
+              {t.olderSlow && <WakingHint />}
+            </>
           )}
           {t.olderError && (
             <p className="thread-status" role="alert">
@@ -163,7 +176,7 @@ function Thread({ chatId, meId, otherName }) {
             </p>
           )}
           {messages.length === 0 && mine.length === 0 && (
-            <p className="muted thread-status" data-testid="thread-empty">
+            <p className="muted thread-status" role="status" data-testid="thread-empty">
               No messages yet. Say hi!
             </p>
           )}
@@ -178,14 +191,32 @@ function Thread({ chatId, meId, otherName }) {
               <li key={p.clientId} className={`bubble mine pending ${p.status}`} data-testid={`pending-${p.status}`}>
                 <span className="text">{p.text}</span>
                 {p.status === 'sending' ? (
-                  <span className="meta">sending…</span>
+                  <span className="meta" role="status">
+                    sending…
+                  </span>
                 ) : (
-                  <span className="meta failed-meta" role="alert">
+                  <span className="meta failed-meta" role="alert" data-code={p.code || undefined}>
                     Failed{p.error ? `: ${p.error}` : ''}{' '}
-                    <button type="button" className="link-btn" onClick={() => retryMessage(chatId, p.clientId)} data-testid="retry-send">
-                      Retry
-                    </button>{' '}
-                    <button type="button" className="link-btn" onClick={() => discardMessage(chatId, p.clientId)}>
+                    {p.retryable && (
+                      <>
+                        <button
+                          type="button"
+                          className="link-btn"
+                          onClick={() => retryMessage(chatId, p.clientId)}
+                          aria-label={`Retry sending "${preview(p.text)}"`}
+                          data-testid="retry-send"
+                        >
+                          Retry
+                        </button>{' '}
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      className="link-btn"
+                      onClick={() => discardMessage(chatId, p.clientId)}
+                      aria-label={`Discard unsent message "${preview(p.text)}"`}
+                      data-testid="discard-send"
+                    >
                       Discard
                     </button>
                   </span>
@@ -199,12 +230,16 @@ function Thread({ chatId, meId, otherName }) {
   );
 }
 
+const preview = (t) => (t.length > 40 ? `${t.slice(0, 40)}…` : t);
+
 function isNearBottom(el) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
 }
 
 function Composer({ chatId }) {
   const { sendMessage } = useChats();
+  const { status: socketStatus, slow: socketSlow } = useSocketContext();
+  const offline = socketStatus !== 'connected';
   const [text, setText] = useState('');
   const [error, setError] = useState(null);
   const length = text.length; // JS UTF-16 length, same unit as the server (ruling P3-5)
@@ -231,8 +266,18 @@ function Composer({ chatId }) {
 
   // Over the limit: no truncation, red counter, Send disabled, inline error (ruling P3-6).
   const inlineError = over ? validateMessageText(text)?.message : error;
+  const sendDisabledReason = over ? 'Message is too long' : blank ? 'Type a message to send' : null;
   return (
     <form className="composer" onSubmit={submit} noValidate>
+      {offline && (
+        <p className="hint composer-notice" role="status" data-testid="composer-offline">
+          {socketStatus === 'connecting' && !socketSlow
+            ? 'Connecting…'
+            : socketStatus === 'connecting'
+              ? 'Waking server… Messages can be sent once connected.'
+              : 'Reconnecting… Messages sent now will fail and can be retried.'}
+        </p>
+      )}
       <label htmlFor="composer-input" className="sr-only">
         Message
       </label>
@@ -254,10 +299,17 @@ function Composer({ chatId }) {
         <span id="composer-counter" className={`counter${over ? ' over' : ''}`} data-testid="composer-counter">
           {length} / {MAX_MESSAGE_LENGTH}
         </span>
-        <span id="composer-error" className="error" role={inlineError ? 'alert' : undefined} data-testid="composer-error">
+        <span id="composer-error" className="error" aria-live="assertive" data-testid="composer-error">
           {inlineError || ''}
         </span>
-        <button type="submit" className="send" disabled={over || blank} data-testid="send">
+        <button
+          type="submit"
+          className="send"
+          disabled={over || blank}
+          aria-label={sendDisabledReason ? `Send (disabled: ${sendDisabledReason})` : 'Send message'}
+          title={sendDisabledReason || undefined}
+          data-testid="send"
+        >
           Send
         </button>
       </div>

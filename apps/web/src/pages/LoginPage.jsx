@@ -66,7 +66,7 @@ export function LoginPage() {
           </button>
         )}
         {submitting && slow && <WakingHint />}
-        <button type="submit" className="primary" disabled={submitting} data-testid="login-submit">
+        <button type="submit" className="primary" disabled={submitting} aria-busy={submitting || undefined} data-testid="login-submit">
           {submitting ? (slow ? 'Waking server…' : 'Logging in…') : 'Log in'}
         </button>
       </form>

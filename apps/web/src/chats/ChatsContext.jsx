@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { MAX_MESSAGE_LENGTH, SEND_ACK_TIMEOUT_MS } from '../config.js';
-import { createOrGetChat, fetchMessages, listChats } from '../lib/api.js';
+import { RATE_LIMITED_MESSAGE, createOrGetChat, fetchMessages, listChats } from '../lib/api.js';
 import { useSocketContext } from '../socket/SocketContext.jsx';
 import { compareChats, mergeMessages, newerChat } from './messageUtils.js';
 
@@ -13,7 +13,7 @@ import { compareChats, mergeMessages, newerChat } from './messageUtils.js';
  *   threads    { [chatId]: { status: loading|ok|error, error, errorStatus, slow,
  *                            messages: [Message] (oldest -> newest, deduped by id), hasMore,
  *                            olderLoading, olderError } }
- *   pending    { [chatId]: [{ clientId (UUID v4, sent to server), attemptId, text, status: sending|failed, error }] }
+ *   pending    { [chatId]: [{ clientId (UUID v4, sent to server), attemptId, text, status: sending|failed, error, code, retryable }] }
  *
  * Live: `message:new` upserts the chat and merges the message into its thread.
  * Reconnect (LOCKED ruling P4-5): on every socket re-connect, refetch GET /chats and the newest
@@ -57,7 +57,7 @@ function reducer(state, a) {
       // a.mode: 'newest' (first load or reconnect refetch) | 'older' (scroll-up page)
       return patchThread(state, a.chatId, (t) => {
         if (a.mode === 'older') {
-          return { messages: mergeMessages(a.messages, t.messages), hasMore: a.hasMore, olderLoading: false, olderError: null };
+          return { messages: mergeMessages(a.messages, t.messages), hasMore: a.hasMore, olderLoading: false, olderSlow: false, olderError: null };
         }
         const loaded = t.status === 'ok' && t.messages.length > 0;
         if (!loaded) {
@@ -96,12 +96,16 @@ function reducer(state, a) {
     case 'PENDING_FAIL':
       // Only fail the attempt that is still current (a retry starts a new attempt).
       return setPending(state, a.chatId, (list) =>
-        list.map((p) => (p.clientId === a.clientId && p.attemptId === a.attemptId && p.status === 'sending' ? { ...p, status: 'failed', error: a.error } : p)),
+        list.map((p) =>
+          p.clientId === a.clientId && p.attemptId === a.attemptId && p.status === 'sending'
+            ? { ...p, status: 'failed', error: a.error, code: a.code, retryable: a.retryable }
+            : p,
+        ),
       );
     case 'FAIL_ALL_SENDING': {
       const pending = {};
       for (const [chatId, list] of Object.entries(state.pending))
-        pending[chatId] = list.map((p) => (p.status === 'sending' ? { ...p, status: 'failed', error: a.error } : p));
+        pending[chatId] = list.map((p) => (p.status === 'sending' ? { ...p, status: 'failed', error: a.error, code: 'DISCONNECTED', retryable: true } : p));
       return { ...state, pending };
     }
     case 'ACK_OK': {
@@ -140,6 +144,14 @@ export function newClientId() {
 
 let attemptSeq = 0;
 const nextAttemptId = () => (attemptSeq += 1);
+
+/**
+ * LOCKED — Client send UX: timeout, disconnect, RATE_LIMITED, SERVER_ERROR -> Retry + Discard;
+ * VALIDATION_ERROR, MESSAGE_EMPTY, MESSAGE_TOO_LONG, FORBIDDEN -> Discard only.
+ * Codes not named by the ruling are treated as retryable (transient until proven otherwise).
+ */
+const NON_RETRYABLE_SEND_CODES = new Set(['VALIDATION_ERROR', 'MESSAGE_EMPTY', 'MESSAGE_TOO_LONG', 'FORBIDDEN']);
+export const isRetryableSendCode = (code) => !NON_RETRYABLE_SEND_CODES.has(code);
 
 /** Composer rules (FR-24, FR-25, rulings P3-5/P3-6): JS text.length, no trimming of what is sent. */
 export function validateMessageText(text) {
@@ -216,13 +228,13 @@ export function ChatsProvider({ children }) {
   const loadOlder = useCallback(async (chatId) => {
     const t = stateRef.current.threads[chatId];
     if (!t || t.status !== 'ok' || !t.hasMore || t.olderLoading || !t.messages.length) return;
-    dispatch({ type: 'THREAD', chatId, patch: { olderLoading: true, olderError: null } });
+    dispatch({ type: 'THREAD', chatId, patch: { olderLoading: true, olderError: null, olderSlow: false } });
     try {
-      const page = await fetchMessages(chatId, { before: t.messages[0].id });
+      const page = await fetchMessages(chatId, { before: t.messages[0].id, onSlow: () => dispatch({ type: 'THREAD', chatId, patch: { olderSlow: true } }) });
       dispatch({ type: 'PAGE', chatId, mode: 'older', messages: page.messages || [], hasMore: !!page.hasMore });
     } catch (err) {
       if (err.status === 401) return;
-      dispatch({ type: 'THREAD', chatId, patch: { olderLoading: false, olderError: err.message } });
+      dispatch({ type: 'THREAD', chatId, patch: { olderLoading: false, olderSlow: false, olderError: err.message } });
     }
   }, []);
 
@@ -234,23 +246,25 @@ export function ChatsProvider({ children }) {
   // ---- sending (socket only, ruling P3-1; ack-or-fail, no queue, ruling P4-2) ----
   const emitAttempt = useCallback((chatId, clientId, text) => {
     const attemptId = nextAttemptId();
-    dispatch({ type: 'PENDING_UPSERT', chatId, item: { clientId, attemptId, text, status: 'sending', error: null } });
+    dispatch({ type: 'PENDING_UPSERT', chatId, item: { clientId, attemptId, text, status: 'sending', error: null, code: null, retryable: false } });
+    const fail = (code, error) => dispatch({ type: 'PENDING_FAIL', chatId, clientId, attemptId, code, error, retryable: isRetryableSendCode(code) });
     const s = socketRef.current;
     if (!s || !s.connected) {
       // Socket.IO would buffer this emit until reconnect; the ruling says no queue, so fail now.
-      dispatch({ type: 'PENDING_FAIL', chatId, clientId, attemptId, error: 'Not connected. Check your connection and retry.' });
+      fail('DISCONNECTED', 'Not connected. Check your connection and retry.');
       return;
     }
     s.timeout(SEND_ACK_TIMEOUT_MS).emit('message:send', { chatId, text, clientId }, (err, ack) => {
       if (err) {
-        dispatch({ type: 'PENDING_FAIL', chatId, clientId, attemptId, error: 'No response from the server. Retry?' });
+        fail('TIMEOUT', 'No response from the server.');
         return;
       }
       if (ack?.ok && ack.message) {
         dispatch({ type: 'ACK_OK', chatId, clientId, message: ack.message });
-      } else {
-        dispatch({ type: 'PENDING_FAIL', chatId, clientId, attemptId, error: ack?.error?.message || 'The message was not sent.' });
+        return;
       }
+      const code = ack?.error?.code || 'SERVER_ERROR';
+      fail(code, code === 'RATE_LIMITED' ? RATE_LIMITED_MESSAGE : ack?.error?.message || 'The message was not sent.');
     });
   }, []);
 
@@ -265,7 +279,7 @@ export function ChatsProvider({ children }) {
   /** Retry reuses the same clientId, so the server dedupes if the first attempt actually landed. */
   const retryMessage = useCallback((chatId, clientId) => {
     const p = (stateRef.current.pending[chatId] || []).find((x) => x.clientId === clientId);
-    if (p && p.status === 'failed') emitAttempt(chatId, clientId, p.text);
+    if (p && p.status === 'failed' && p.retryable) emitAttempt(chatId, clientId, p.text);
   }, [emitAttempt]);
 
   const discardMessage = useCallback((chatId, clientId) => dispatch({ type: 'PENDING_REMOVE', chatId, clientId }), []);

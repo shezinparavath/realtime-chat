@@ -34,6 +34,7 @@ function UserSearch() {
   const [attempt, setAttempt] = useState(0);
   const [opening, setOpening] = useState(null); // userId being opened
   const [openError, setOpenError] = useState(null);
+  const [openSlow, setOpenSlow] = useState(false);
 
   useEffect(() => {
     // Contract: empty q returns [] — skip the request entirely.
@@ -55,8 +56,9 @@ function UserSearch() {
   async function open(user) {
     setOpening(user.id);
     setOpenError(null);
+    setOpenSlow(false);
     try {
-      const chat = await openChatWith(user.id);
+      const chat = await openChatWith(user.id, { onSlow: () => setOpenSlow(true) });
       navigate(chatPath(chat.id));
     } catch (err) {
       if (err.status === 401) return;
@@ -89,7 +91,11 @@ function UserSearch() {
             Search by username
           </p>
         )}
-        {(search.state === 'loading' || pending) && input.trim() && <p className="muted">Searching…</p>}
+        {(search.state === 'loading' || pending) && input.trim() && (
+          <p className="muted" role="status" data-testid="search-loading">
+            Searching…
+          </p>
+        )}
         {search.state === 'loading' && search.slow && <WakingHint />}
         {search.state === 'error' && !pending && (
           <div role="alert">
@@ -109,9 +115,23 @@ function UserSearch() {
             {search.users.map((u) => (
               <li key={u.id}>
                 <span className="username">@{u.username}</span>
-                <button type="button" onClick={() => open(u)} disabled={opening !== null} data-testid={`open-chat-${u.username}`}>
-                  {opening === u.id ? 'Opening…' : 'Message'}
+                <button
+                  type="button"
+                  onClick={() => open(u)}
+                  disabled={opening !== null}
+                  aria-label={
+                    opening === u.id
+                      ? `Opening chat with @${u.username}`
+                      : opening !== null
+                        ? `Message @${u.username} (unavailable while another chat is opening)`
+                        : `${openError?.userId === u.id ? 'Retry opening chat with' : 'Message'} @${u.username}`
+                  }
+                  aria-busy={opening === u.id || undefined}
+                  data-testid={`open-chat-${u.username}`}
+                >
+                  {opening === u.id ? 'Opening…' : openError?.userId === u.id ? 'Retry' : 'Message'}
                 </button>
+                {opening === u.id && openSlow && <WakingHint />}
                 {openError?.userId === u.id && (
                   <small className="error" role="alert">
                     Could not open chat: {openError.message}

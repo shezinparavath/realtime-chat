@@ -22,11 +22,16 @@ export function setUnauthorizedHandler(fn) {
   unauthorizedHandler = fn;
 }
 
+export const RATE_LIMITED_MESSAGE = 'Too many attempts, try again shortly';
 const FALLBACK_MESSAGES = {
   NETWORK_ERROR: 'Could not reach the server. Check your connection and try again.',
-  TIMEOUT: 'The server took too long to respond. It may still be waking up — try again.',
+  TIMEOUT: `The server didn't respond within ${REQUEST_TIMEOUT_MS / 1000}s. It may still be waking up. Try again.`,
   SERVER_ERROR: 'Something went wrong on the server. Please try again.',
 };
+
+/** Codes where repeating the same request can succeed (shown with a Retry button). */
+export const RETRYABLE_CODES = new Set(['NETWORK_ERROR', 'TIMEOUT', 'SERVER_ERROR', 'RATE_LIMITED', 'BAD_RESPONSE']);
+export const isRetryable = (err) => RETRYABLE_CODES.has(err?.code) || (err?.status >= 500);
 
 /**
  * apiRequest('/auth/login', { method: 'POST', body, auth: false, signal, onSlow })
@@ -83,6 +88,10 @@ export async function apiRequest(path, { method = 'GET', body, auth = true, sign
 
   if (!res.ok) {
     const e = data?.error;
+    // LOCKED hardening: RATE_LIMITED (HTTP 429). Always show the agreed text, even without a JSON body.
+    if (res.status === 429 || e?.code === 'RATE_LIMITED') {
+      throw new ApiError({ status: res.status, code: 'RATE_LIMITED', message: RATE_LIMITED_MESSAGE, field: e?.field });
+    }
     throw new ApiError({
       status: res.status,
       code: e?.code || (res.status >= 500 ? 'SERVER_ERROR' : `HTTP_${res.status}`),
