@@ -2,65 +2,31 @@
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { io: ioc } = require('socket.io-client');
-const { createApp } = require('../src/app');
-const { loadConfig } = require('../src/config');
+const { startServer, connectSocket, once, emitAck, TEST_SECRET } = require('./helpers');
+const { signToken } = require('../src/lib/jwt');
 
-describe('Socket.IO hello', () => {
-  let httpServer;
-  let io;
-  let port;
+describe('Socket.IO hello (authenticated)', () => {
+  let srv;
 
   before(async () => {
-    const config = loadConfig({
-      PORT: '0',
-      CLIENT_ORIGINS: 'http://localhost:5173',
-      JWT_SECRET: 'test-secret',
-    });
-    ({ httpServer, io } = createApp(config));
-    await new Promise((resolve) => {
-      httpServer.listen(0, '127.0.0.1', resolve);
-    });
-    port = httpServer.address().port;
+    srv = await startServer({ db: false });
   });
 
   after(async () => {
-    io.close();
-    await new Promise((resolve) => httpServer.close(resolve));
+    await srv.stop();
   });
 
-  it('emits hello with message and socketId on connect', async () => {
-    const socket = ioc(`http://127.0.0.1:${port}`, {
-      path: '/socket.io',
-      transports: ['websocket'],
-      forceNew: true,
-    });
+  it('emits hello with message, socketId and userId; ping ack still works', async () => {
+    const userId = '0123456789abcdef01234567';
+    const token = signToken({ id: userId, username: 'alice' }, TEST_SECRET);
+    const socket = connectSocket(srv.url, token);
 
-    const hello = await new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error('hello timeout')), 5000);
-      socket.on('hello', (payload) => {
-        clearTimeout(t);
-        resolve(payload);
-      });
-      socket.on('connect_error', (err) => {
-        clearTimeout(t);
-        reject(err);
-      });
-    });
-
+    const hello = await once(socket, 'hello');
     assert.equal(hello.message, 'welcome');
-    assert.equal(typeof hello.socketId, 'string');
-    assert.ok(hello.socketId.length > 0);
     assert.equal(hello.socketId, socket.id);
+    assert.equal(hello.userId, userId);
 
-    const pong = await new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error('ping ack timeout')), 5000);
-      socket.emit('ping', { n: 1 }, (ack) => {
-        clearTimeout(t);
-        resolve(ack);
-      });
-    });
-
+    const pong = await emitAck(socket, 'ping', { n: 1 });
     assert.equal(pong.pong, true);
     assert.equal(typeof pong.at, 'string');
     assert.deepEqual(pong.echo, { n: 1 });
