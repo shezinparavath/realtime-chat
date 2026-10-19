@@ -129,17 +129,37 @@ describe('auth REST', () => {
     assert.equal(res.body.user.username, 'alice_1');
   });
 
-  it('wrong password / unknown user → 401 INVALID_CREDENTIALS', async () => {
-    assertError(
-      await request(app).post('/auth/login').send({ identifier: 'alice_1', password: 'wrongpass1' }),
-      401,
-      'INVALID_CREDENTIALS'
-    );
-    assertError(
-      await request(app).post('/auth/login').send({ identifier: 'nobody', password: 'password123' }),
-      401,
-      'INVALID_CREDENTIALS'
-    );
+  it('wrong password / unknown user → identical 401 INVALID_CREDENTIALS (ruling P2-3)', async () => {
+    const wrong = await request(app).post('/auth/login').send({ identifier: 'alice_1', password: 'wrongpass1' });
+    const unknownUser = await request(app).post('/auth/login').send({ identifier: 'nobody', password: 'password123' });
+    const unknownEmail = await request(app)
+      .post('/auth/login')
+      .send({ identifier: 'nobody@example.com', password: 'password123' });
+    for (const r of [wrong, unknownUser, unknownEmail]) {
+      assertError(r, 401, 'INVALID_CREDENTIALS');
+      assert.deepEqual(r.body, {
+        error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email/username or password' },
+      });
+    }
+  });
+
+  it('mixed-case username is lowercased before validation/uniqueness (ruling P2-2)', async () => {
+    const res = await request(app)
+      .post('/auth/signup')
+      .send({ email: 'mixed@example.com', username: 'ALICE_1', password: 'password123' });
+    assertError(res, 409, 'USERNAME_TAKEN', 'username');
+    const ok = await request(app)
+      .post('/auth/signup')
+      .send({ email: 'bobcase@example.com', username: 'BobCase', password: 'password123' })
+      .expect(201);
+    assert.equal(ok.body.user.username, 'bobcase');
+  });
+
+  it('email a@b and >254 chars rejected (ruling P2-1)', async () => {
+    for (const email of ['a@b', `${'a'.repeat(250)}@b.co`]) {
+      const res = await request(app).post('/auth/signup').send({ email, username: 'emailcase', password: 'password123' });
+      assertError(res, 400, 'VALIDATION_ERROR', 'email');
+    }
   });
 
   it('login missing fields → 400 VALIDATION_ERROR', async () => {
