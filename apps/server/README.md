@@ -29,6 +29,8 @@ All errors: `{ "error": { "code", "message", "field?" } }`.
 | POST | `/auth/signup` | public | `{ email, username, password }` → 201 `{ token, user }` |
 | POST | `/auth/login` | public | `{ identifier, password }` → 200 `{ token, user }` |
 | GET | `/auth/me` | Bearer | 200 `{ user }` |
+| GET | `/users/search?q=` | Bearer | prefix, case-insensitive, excludes self, max 20 → `{ users }` |
+| POST | `/chats` | Bearer | `{ userId }` → 201 new / 200 existing `{ chat }` |
 
 Socket.IO: `io(API_URL, { auth: { token } })`; bad/missing token → `connect_error` with `err.message === 'unauthorized'`. On connect: room `user:<id>` + `hello { message:'welcome', socketId, userId }`.
 

@@ -23,7 +23,7 @@ function verifyToken(token, secret) {
     if (!payload || typeof payload.sub !== 'string' || !/^[a-f0-9]{24}$/i.test(payload.sub)) {
       return null;
     }
-    return { id: payload.sub, username: payload.username };
+    return { id: payload.sub.toLowerCase(), username: payload.username };
   } catch {
     return null;
   }
