@@ -8,7 +8,10 @@ const USERNAME_MIN = 3;
 const USERNAME_MAX = 20;
 const USERNAME_PATTERN = /^[a-z0-9_.]{3,20}$/;
 const PASSWORD_MIN = 8;
-const PASSWORD_MAX = 128;
+// Ruling (20 Oct ~1:02 AM IST): 8–72 characters AND <= 72 bytes UTF-8 (bcrypt truncates at 72 bytes).
+const PASSWORD_MAX = 72;
+const MAX_PASSWORD_BYTES = 72;
+const PASSWORD_LENGTH_MESSAGE = 'Password must be 8–72 characters';
 const EMAIL_MAX = 254;
 const BCRYPT_COST = 10;
 const JWT_ALGORITHM = 'HS256';
@@ -24,6 +27,8 @@ module.exports = {
   USERNAME_PATTERN,
   PASSWORD_MIN,
   PASSWORD_MAX,
+  MAX_PASSWORD_BYTES,
+  PASSWORD_LENGTH_MESSAGE,
   EMAIL_MAX,
   BCRYPT_COST,
   JWT_ALGORITHM,

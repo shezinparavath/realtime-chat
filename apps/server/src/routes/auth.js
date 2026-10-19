@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const { AppError, asyncHandler } = require('../errors');
 const { validateSignup, validateLogin } = require('../validation');
+const { MAX_PASSWORD_BYTES } = require('../constants');
 const { signToken } = require('../lib/jwt');
 const { requireAuth } = require('../middleware/auth');
 const { requireDb } = require('../middleware/requireDb');
@@ -62,7 +63,11 @@ function authRouter(config) {
     asyncHandler(async (req, res) => {
       const { identifier, isEmail, password } = validateLogin(req.body);
       const user = await User.findOne(isEmail ? { email: identifier } : { username: identifier });
-      const ok = await bcrypt.compare(password, user ? user.passwordHash : DUMMY_HASH);
+      // Over the 72-byte bcrypt limit can never be a valid password → plain 401
+      // INVALID_CREDENTIALS (not 400), still after a compare so timing stays similar.
+      const tooLong = Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES;
+      const compared = await bcrypt.compare(password, user && !tooLong ? user.passwordHash : DUMMY_HASH);
+      const ok = compared && !tooLong && Boolean(user);
       if (!user || !ok) {
         throw new AppError('INVALID_CREDENTIALS', 'Invalid email/username or password');
       }

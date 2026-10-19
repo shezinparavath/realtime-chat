@@ -7,11 +7,23 @@ const {
   USERNAME_MAX,
   PASSWORD_MIN,
   PASSWORD_MAX,
+  MAX_PASSWORD_BYTES,
+  PASSWORD_LENGTH_MESSAGE,
   EMAIL_MAX,
   MAX_MESSAGE_LENGTH,
 } = require('./constants');
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** 8–72 chars (String.length) AND <= 72 bytes in UTF-8. */
+function isPasswordWithinLimits(password) {
+  return (
+    typeof password === 'string' &&
+    password.length >= PASSWORD_MIN &&
+    password.length <= PASSWORD_MAX &&
+    Buffer.byteLength(password, 'utf8') <= MAX_PASSWORD_BYTES
+  );
+}
 
 function normalizeEmail(raw) {
   return typeof raw === 'string' ? raw.trim().toLowerCase() : raw;
@@ -48,12 +60,8 @@ function validateSignup(body) {
   if (typeof password !== 'string' || password.length === 0) {
     throw new AppError('VALIDATION_ERROR', 'Password is required', 'password');
   }
-  if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
-    throw new AppError(
-      'VALIDATION_ERROR',
-      `Password must be ${PASSWORD_MIN}-${PASSWORD_MAX} characters`,
-      'password'
-    );
+  if (!isPasswordWithinLimits(password)) {
+    throw new AppError('VALIDATION_ERROR', PASSWORD_LENGTH_MESSAGE, 'password');
   }
 
   return { email, username, password };
@@ -112,6 +120,7 @@ function isObjectIdString(v) {
 }
 
 module.exports = {
+  isPasswordWithinLimits,
   validateMessageText,
   validateClientId,
   isObjectIdString,
