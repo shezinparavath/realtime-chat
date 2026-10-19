@@ -1,0 +1,18 @@
+export const colors = {
+  bg: '#f4f5f7',
+  card: '#ffffff',
+  text: '#1d1f23',
+  muted: '#6b7280',
+  border: '#d9dce1',
+  primary: '#2f6fed',
+  primaryText: '#ffffff',
+  error: '#c62828',
+  errorBg: '#fdecea',
+  hint: '#8a5a00',
+  hintBg: '#fff6e0',
+  mine: '#2f6fed',
+  mineText: '#ffffff',
+  theirs: '#e7e9ee',
+  failedBg: '#fbe3e3',
+  ok: '#2e7d32',
+};
