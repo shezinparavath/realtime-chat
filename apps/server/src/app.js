@@ -23,7 +23,7 @@ function createApp(config) {
   assertValidConfig(config); // throws: malformed TRUST_PROXY_HOPS / CLIENT_IP_HEADER
 
   const app = express();
-  app.disable('x-powered-by'); // Jain ruling (hardening)
+  app.disable('x-powered-by'); // spec: hardening (interface-contracts, nice-to-have + hardening)
   // DEF-001: trusted proxy hops for req.ip. TRUST_PROXY_HOPS; default 3 in production
   // (Render: XFF = client, cloudflare, render LB), 1 elsewhere. See config.js.
   app.set('trust proxy', config.trustProxyHops);
