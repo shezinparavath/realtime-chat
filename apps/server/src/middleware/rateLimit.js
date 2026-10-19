@@ -16,24 +16,40 @@ function authLimiter({ windowMs, max }) {
     limit: max,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
-    handler: (_req, res) => sendError(res, new AppError(RATE_LIMITED, RATE_LIMITED_MESSAGE)),
+    // Retry-After (Jain ruling): whole seconds until this IP's window resets,
+    // ceil((resetTime - now) / 1000), at least 1. Set explicitly here so it
+    // doesn't depend on the library's header mode.
+    handler: (req, res) => {
+      res.set('Retry-After', String(retryAfterSeconds(req.rateLimit && req.rateLimit.resetTime)));
+      return sendError(res, new AppError(RATE_LIMITED, RATE_LIMITED_MESSAGE));
+    },
   });
 }
 
+function retryAfterSeconds(resetTime, now = Date.now()) {
+  const reset = resetTime instanceof Date ? resetTime.getTime() : Number(resetTime);
+  if (!Number.isFinite(reset)) return 1;
+  return Math.max(1, Math.ceil((reset - now) / 1000));
+}
+
 /**
- * Sliding-window counter for per-socket limits. allow() records and returns
- * true, or returns false when `max` events already happened within `windowMs`.
+ * Sliding-window counter for per-socket limits.
+ * check(now) → { allowed: true } (and records the hit) or
+ * { allowed: false, retryAfterMs } where retryAfterMs is the integer ms until
+ * the oldest hit in the window expires (i.e. the next attempt would be allowed),
+ * ceil, at least 1. Rejected attempts are not recorded.
  */
 function createWindowLimiter({ max, windowMs }) {
   const hits = [];
-  return {
-    allow(now = Date.now()) {
-      while (hits.length && now - hits[0] >= windowMs) hits.shift();
-      if (hits.length >= max) return false;
-      hits.push(now);
-      return true;
-    },
-  };
+  function check(now = Date.now()) {
+    while (hits.length && now - hits[0] >= windowMs) hits.shift();
+    if (hits.length >= max) {
+      return { allowed: false, retryAfterMs: Math.max(1, Math.ceil(hits[0] + windowMs - now)) };
+    }
+    hits.push(now);
+    return { allowed: true };
+  }
+  return { check, allow: (now) => check(now).allowed };
 }
 
-module.exports = { authLimiter, createWindowLimiter };
+module.exports = { authLimiter, createWindowLimiter, retryAfterSeconds };

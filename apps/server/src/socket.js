@@ -44,9 +44,12 @@ function attachSocketHandlers(io, config) {
     // On success emits message:new { message, chat } to BOTH participants' user rooms.
     socket.on('message:send', async (payload, ack) => {
       const reply = typeof ack === 'function' ? ack : () => {};
-      // 10 per 10 s per socket (LOCKED). Counts every attempt; over → nothing saved/emitted.
-      if (!sendLimiter.allow()) {
-        reply(ackError(RATE_LIMITED, RATE_LIMITED_MESSAGE));
+      // 10 per 10 s per socket (LOCKED). Every allowed attempt counts (valid or not); rejected ones don't extend the window. Over → nothing saved/emitted.
+      const gate = sendLimiter.check();
+      if (!gate.allowed) {
+        const nack = ackError(RATE_LIMITED, RATE_LIMITED_MESSAGE);
+        nack.error.retryAfterMs = gate.retryAfterMs; // Jain ruling: integer ms until this socket's window frees up
+        reply(nack);
         return;
       }
       try {

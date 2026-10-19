@@ -46,7 +46,11 @@ describe('auth rate limits (429 RATE_LIMITED)', () => {
     assert.equal(res.status, 429);
     assert.deepEqual(res.body, RATE_BODY);
     assert.ok(res.headers.ratelimit || res.headers['ratelimit-policy'], 'standard RateLimit headers');
-    assert.ok(res.headers['retry-after']);
+    // Retry-After: whole seconds until the 60 s window resets (ceil), requests were just made
+    assert.match(res.headers['retry-after'], /^\d+$/);
+    const ra = Number(res.headers['retry-after']);
+    assert.ok(ra >= 55 && ra <= 60, `Retry-After=${ra}`);
+    assert.equal(res.headers['x-powered-by'], undefined);
   });
 
   it('login has its own limiter (not exhausted by signup), then 429 after 3', async () => {
@@ -57,6 +61,8 @@ describe('auth rate limits (429 RATE_LIMITED)', () => {
     const res = await request(srv.app).post('/auth/login').send({ identifier: 'nobody', password: 'password123' });
     assert.equal(res.status, 429);
     assert.deepEqual(res.body, RATE_BODY);
+    const ra = Number(res.headers['retry-after']);
+    assert.ok(Number.isInteger(ra) && ra >= 1 && ra <= 60, `Retry-After=${res.headers['retry-after']}`);
   });
 
   it('trust proxy 1: limit is per client IP from X-Forwarded-For', async () => {
@@ -108,7 +114,12 @@ describe('message:send rate limit (10 per 10 s per socket)', () => {
       assert.equal(ack.ok, true, `send ${i}: ${JSON.stringify(ack)}`);
     }
     const limited = await emitAck(a, 'message:send', { chatId, text: 'over' });
-    assert.deepEqual(limited, { ok: false, error: { code: 'RATE_LIMITED', message: 'Too many attempts, try again shortly' } });
+    assert.equal(limited.ok, false);
+    assert.deepEqual(Object.keys(limited.error).sort(), ['code', 'message', 'retryAfterMs']);
+    assert.equal(limited.error.code, 'RATE_LIMITED');
+    assert.equal(limited.error.message, 'Too many attempts, try again shortly');
+    assert.ok(Number.isInteger(limited.error.retryAfterMs), 'integer ms');
+    assert.ok(limited.error.retryAfterMs > 0 && limited.error.retryAfterMs <= 10_000, `retryAfterMs=${limited.error.retryAfterMs}`);
     a.emit('message:send', { chatId, text: 'over, no ack' }); // must not crash
     await new Promise((r) => setTimeout(r, 200));
     assert.equal(await Message.countDocuments({ chatId }), 10);
@@ -122,6 +133,50 @@ describe('message:send rate limit (10 per 10 s per socket)', () => {
     const ok = await emitAck(a2, 'message:send', { chatId, text: 'other socket' });
     assert.equal(ok.ok, true);
     assert.equal(a.connected, true);
+  });
+});
+
+describe('limiter math (exact semantics)', () => {
+  const { createWindowLimiter, retryAfterSeconds } = require('../src/middleware/rateLimit');
+
+  it('socket window: retryAfterMs = oldest hit + window - now; rejected attempts not recorded', () => {
+    const l = createWindowLimiter({ max: 2, windowMs: 1000 });
+    assert.deepEqual(l.check(0), { allowed: true });
+    assert.deepEqual(l.check(100), { allowed: true });
+    assert.deepEqual(l.check(250), { allowed: false, retryAfterMs: 750 });
+    assert.deepEqual(l.check(999.2), { allowed: false, retryAfterMs: 1 });
+    assert.deepEqual(l.check(1000), { allowed: true }); // hit@0 expired
+    assert.deepEqual(l.check(1050), { allowed: false, retryAfterMs: 50 }); // oldest is now hit@100
+  });
+
+  it('Retry-After seconds = ceil((resetTime - now) / 1000), min 1', () => {
+    const now = 1_000_000;
+    assert.equal(retryAfterSeconds(new Date(now + 60_000), now), 60);
+    assert.equal(retryAfterSeconds(new Date(now + 1500), now), 2);
+    assert.equal(retryAfterSeconds(new Date(now + 1000), now), 1);
+    assert.equal(retryAfterSeconds(new Date(now + 1), now), 1);
+    assert.equal(retryAfterSeconds(new Date(now - 5), now), 1);
+    assert.equal(retryAfterSeconds(undefined, now), 1);
+  });
+});
+
+describe('X-Powered-By disabled', () => {
+  let srv;
+  before(async () => {
+    srv = await startServer({ db: false });
+  });
+  after(async () => {
+    await srv.stop();
+  });
+
+  it('header absent on 200, 404 and error responses', async () => {
+    for (const res of [
+      await request(srv.app).get('/health'),
+      await request(srv.app).get('/nope'),
+      await request(srv.app).post('/auth/login').send({ identifier: 'x', password: 'y' }),
+    ]) {
+      assert.equal(res.headers['x-powered-by'], undefined, `status ${res.status}`);
+    }
   });
 });
 
