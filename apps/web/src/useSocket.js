@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
-import { API_URL, SLOW_THRESHOLD_MS, SOCKET_PATH } from './config.js';
+import { API_URL, CONNECT_TIMEOUT_MS, SLOW_THRESHOLD_MS, SOCKET_PATH } from './config.js';
 
 /**
  * Authenticated Socket.IO connection (LOCKED contract): io(API_URL, { auth: { token } }).
@@ -10,8 +10,8 @@ import { API_URL, SLOW_THRESHOLD_MS, SOCKET_PATH } from './config.js';
  * token = null -> no socket (status 'idle'). A new token tears down the old socket and opens a new one.
  * status: 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'unauthorized' | 'error'
  * hello: last { message: 'welcome', socketId, userId } from the server.
- * socket: the live Socket instance (or null), for P3 messaging.
- * everConnected: connected at least once with this token (P3: refetch on reconnect hooks off this + 'connect').
+ * socket: the live Socket instance (or null), used by the chat store.
+ * everConnected: connected at least once with this token (drives the Reconnecting… bar).
  */
 export function useSocket(token, { onUnauthorized } = {}) {
   const [status, setStatus] = useState(token ? 'connecting' : 'idle');
@@ -48,7 +48,7 @@ export function useSocket(token, { onUnauthorized } = {}) {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 10000,
-      timeout: 60000, // Render cold start can take ~50s
+      timeout: CONNECT_TIMEOUT_MS, // per-attempt limit; Render cold start can take ~50s, then Socket.IO retries
     });
     setSocket(s);
 
@@ -68,6 +68,7 @@ export function useSocket(token, { onUnauthorized } = {}) {
     s.on('hello', (payload) => setHello(payload));
     s.on('disconnect', (reason) => {
       setTransport(null);
+      console.info('[socket] disconnected:', reason); // LOCKED hardening: log the disconnect reason
       // Server-initiated disconnects are not auto-retried by Socket.IO. Reconnect once so the
       // handshake re-checks the token: a revoked/expired one then fails with 'unauthorized'.
       if (reason === 'io server disconnect') {
