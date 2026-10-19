@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
-import { Field, FormError, WakingHint } from '../components/Field.jsx';
+import { Field, FormError, RateLimitCountdown, WakingHint } from '../components/Field.jsx';
 import { normalizeIdentifier, serverErrorToFormErrors, validateLogin, withRetry } from '../lib/validation.js';
+import { useRateLimitLock } from '../hooks/useRateLimitLock.js';
 import { navigate } from '../router.js';
 
 export function LoginPage() {
@@ -11,9 +12,11 @@ export function LoginPage() {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [slow, setSlow] = useState(false);
+  const rateLock = useRateLimitLock(() => setErrors({}));
 
   async function onSubmit(e) {
     e?.preventDefault();
+    if (rateLock.locked) return;
     const creds = { identifier: normalizeIdentifier(identifier), password };
     const v = validateLogin(creds);
     setErrors(v);
@@ -24,6 +27,12 @@ export function LoginPage() {
       await login(creds, { onSlow: () => setSlow(true) });
       navigate('/', { replace: true });
     } catch (err) {
+      if (rateLock.lockFrom(err)) {
+        // 429 with Retry-After: the countdown replaces the form error; submit stays disabled until 0.
+        setErrors({});
+        setSubmitting(false);
+        return;
+      }
       // 401 INVALID_CREDENTIALS -> form-level message (don't reveal which part was wrong).
       setErrors(withRetry(err, err.code === 'INVALID_CREDENTIALS' ? { _form: err.message || 'Invalid credentials.' } : serverErrorToFormErrors(err, ['identifier', 'password'])));
       setSubmitting(false);
@@ -59,14 +68,20 @@ export function LoginPage() {
           error={errors.password}
           disabled={submitting}
         />
-        <FormError message={errors._form} />
-        {errors._retry && (
+        {rateLock.locked ? <RateLimitCountdown message={rateLock.message} /> : <FormError message={errors._form} />}
+        {errors._retry && !rateLock.locked && (
           <button type="button" onClick={() => onSubmit()} data-testid="login-retry">
             Retry
           </button>
         )}
         {submitting && slow && <WakingHint />}
-        <button type="submit" className="primary" disabled={submitting} aria-busy={submitting || undefined} data-testid="login-submit">
+        <button
+          type="submit"
+          className="primary"
+          disabled={submitting || rateLock.locked}
+          aria-busy={submitting || undefined}
+          title={rateLock.locked ? rateLock.message : undefined}
+          data-testid="login-submit">
           {submitting ? (slow ? 'Waking server…' : 'Logging in…') : 'Log in'}
         </button>
       </form>

@@ -1,5 +1,5 @@
-import { Stack, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Stack, useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AuthedOnly } from '../auth/AuthedOnly';
@@ -7,7 +7,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useChats } from '../chats/ChatsContext';
 import { chatPreview, otherParticipant } from '../chats/participants';
 import { ConnectionFooter, ReconnectingBar } from '../components/ConnectionBars';
-import { Button, ErrorBlock, Status, WakingHint, s } from '../components/ui';
+import { Button, ErrorBlock, StaleNotice, Status, WakingHint, s } from '../components/ui';
 import { SEARCH_DEBOUNCE_MS } from '../config';
 import { searchUsers } from '../lib/api';
 import { formatTime } from '../lib/time';
@@ -186,10 +186,16 @@ function ChatList() {
   const { sortedChats, listState, loadChats } = useChats();
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadChats({ background: listState.status === 'ok' }).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Load on first focus, and refetch in the background every time the list regains focus (coming
+  // back from a chat), like the web's remount. A failed background refetch keeps the cached list and
+  // shows the stale notice (Rulings: stale data UX #1).
+  const statusRef = useRef(listState.status);
+  statusRef.current = listState.status;
+  useFocusEffect(
+    useCallback(() => {
+      loadChats({ background: statusRef.current === 'ok' }).catch(() => {});
+    }, [loadChats]),
+  );
 
   async function onRefresh() {
     setRefreshing(true);
@@ -203,6 +209,7 @@ function ChatList() {
       <Text style={st.sectionTitle} accessibilityRole="header">
         Chats
       </Text>
+      {listState.status === 'ok' && listState.stale && <StaleNotice onRetry={() => loadChats({ background: true })} testID="chats-stale" />}
       {showLoading && (
         <View style={st.pad}>
           <Status spinner testID="chats-loading">
