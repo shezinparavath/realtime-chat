@@ -3,6 +3,7 @@
 const { verifyToken } = require('./lib/jwt');
 const { AppError, ackError } = require('./errors');
 const { sendMessage } = require('./services/messages');
+const { attachTyping } = require('./typing');
 
 /**
  * Socket.IO wiring. Handshake must carry auth: { token } (valid JWT), else the
@@ -54,6 +55,8 @@ function attachSocketHandlers(io, config) {
         }
       }
     });
+
+    attachTyping(io, socket);
 
     socket.on('ping', (payload, ack) => {
       const body = {

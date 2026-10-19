@@ -21,7 +21,13 @@ const MAX_MESSAGE_LENGTH = 2000;
 const MESSAGES_PAGE_DEFAULT = 30;
 const MESSAGES_PAGE_MAX = 50;
 
+/** Server-side typing guard: max events per window per socket (RTC-N1-01). */
+const TYPING_MAX_EVENTS = 10;
+const TYPING_WINDOW_MS = 1000;
+
 module.exports = {
+  TYPING_MAX_EVENTS,
+  TYPING_WINDOW_MS,
   USERNAME_MIN,
   USERNAME_MAX,
   USERNAME_PATTERN,
