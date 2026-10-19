@@ -28,15 +28,22 @@ function attachSocketHandlers(io, config) {
       userId: user.id,
     });
 
-    // message:send { chatId, text } + ack → { ok:true, message } | { ok:false, error:{code,message} }
+    // message:send { chatId, text, clientId? } + ack (idempotent per (sender, clientId)) → { ok:true, message } | { ok:false, error:{code,message} }
     // On success emits message:new { message, chat } to BOTH participants' user rooms.
     socket.on('message:send', async (payload, ack) => {
       const reply = typeof ack === 'function' ? ack : () => {};
       try {
         const body = payload && typeof payload === 'object' ? payload : {};
-        const result = await sendMessage({ userId: user.id, chatId: body.chatId, text: body.text });
-        const rooms = result.participantIds.map((id) => `user:${id}`);
-        io.to(rooms).emit('message:new', { message: result.message, chat: result.chat });
+        const result = await sendMessage({
+          userId: user.id,
+          chatId: body.chatId,
+          text: body.text,
+          clientId: body.clientId,
+        });
+        if (!result.duplicate) {
+          const rooms = result.participantIds.map((id) => `user:${id}`);
+          io.to(rooms).emit('message:new', { message: result.message, chat: result.chat });
+        }
         reply({ ok: true, message: result.message });
       } catch (err) {
         if (err instanceof AppError) {

@@ -17,6 +17,7 @@ const lastMessageSchema = new Schema(
     _id: { type: Schema.Types.ObjectId, required: true }, // message id
     senderId: { type: Schema.Types.ObjectId, required: true },
     text: { type: String, required: true },
+    clientId: { type: String, default: null },
     createdAt: { type: Date, required: true },
   },
   { _id: false }
