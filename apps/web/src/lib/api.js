@@ -3,7 +3,7 @@
 // - Every error (HTTP, network, timeout, bad JSON) is thrown as ApiError with the contract's
 //   { code, message, field } fields, so the UI has one shape to render.
 // - ANY 401 runs the registered unauthorized handler (clears token, back to login).
-import { API_URL, REQUEST_TIMEOUT_MS, SLOW_THRESHOLD_MS } from '../config.js';
+import { API_URL, MESSAGES_PAGE_SIZE, REQUEST_TIMEOUT_MS, SLOW_THRESHOLD_MS } from '../config.js';
 import { readToken } from './tokenStore.js';
 
 export class ApiError extends Error {
@@ -111,3 +111,10 @@ export const searchUsers = (q, opts) => apiRequest(`/users/search?q=${encodeURIC
 export const createOrGetChat = (userId, opts) => apiRequest('/chats', { method: 'POST', body: { userId }, ...opts });
 
 export const listChats = (opts) => apiRequest('/chats', opts);
+
+/** GET /chats/:id/messages -> { messages: [Message] (oldest -> newest), hasMore }. Cursor = message id. */
+export const fetchMessages = (chatId, { before, limit = MESSAGES_PAGE_SIZE, ...opts } = {}) => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (before) params.set('before', before);
+  return apiRequest(`/chats/${encodeURIComponent(chatId)}/messages?${params}`, opts);
+};

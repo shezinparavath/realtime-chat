@@ -1,19 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useChats } from '../chats/ChatsContext.jsx';
+import { ChatList } from '../components/ChatList.jsx';
 import { WakingHint } from '../components/Field.jsx';
 import { SEARCH_DEBOUNCE_MS } from '../config.js';
 import { searchUsers } from '../lib/api.js';
 import { chatPath, navigate } from '../router.js';
 
-/**
- * Home: username search -> start/open a 1:1 chat.
- * P3 adds the chat list (GET /chats) alongside the search on this page.
- */
+/** Home: username search -> start/open a 1:1 chat, plus the chat list. */
 export function HomePage() {
   return (
     <>
       <UserSearch />
-      {/* P3: <ChatList /> goes here */}
+      <ChatList />
     </>
   );
 }

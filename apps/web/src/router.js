@@ -5,8 +5,8 @@ import { useEffect, useState } from 'react';
  * Routes:
  *   #/login            log in
  *   #/signup           create account
- *   #/                 home: user search (P3 adds the chat list here)
- *   #/chats/<chatId>   chat view (placeholder in P2; P3 renders messages here)
+ *   #/                 home: user search + chat list
+ *   #/chats/<chatId>   thread + composer
  */
 export function parseHash(hash) {
   const path = (hash || '').replace(/^#/, '') || '/';

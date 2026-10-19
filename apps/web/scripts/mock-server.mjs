@@ -6,8 +6,14 @@
 //   MOCK_PORT=4100 MOCK_LATENCY_MS=5000 npm run mock   # simulate a slow / cold server
 //   MOCK_SEED=1 npm run mock           # seed users alice, alicia, bob (password: password123)
 //
-// Test hooks (mock only, not part of the contract):
-//   POST /__mock/revoke-tokens   rotates the signing secret -> every existing token now 401s
+// Test hooks (mock only, NOT part of the contract; all under /__mock):
+//   POST /__mock/reset              wipe all users/chats/messages (back to a clean state)
+//   POST /__mock/revoke-tokens      rotate the signing secret -> every existing token now 401s
+//   POST /__mock/config             { dropAcks, ackDelayMs, emitDelayMs, suppressEmit } fault injection
+//                                   for message:send (all default off)
+//   POST /__mock/block-user         { username, blocked } drop that user's sockets and close new
+//                                   transports before CONNECT (simulated outage) -> client keeps retrying
+//   POST /__mock/bulk-messages      { chatId, username, count } insert count messages from username
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { Server } from 'socket.io';
@@ -45,7 +51,17 @@ function verifyJwt(token) {
 // ---------- store ----------
 const users = new Map(); // id -> { id, email, username, passwordHash, salt }
 const chats = new Map(); // id -> { id, participantIds:[a,b], lastMessage, createdAt, updatedAt }
-const newId = () => crypto.randomBytes(12).toString('hex'); // looks like a Mongo ObjectId
+const messages = new Map(); // chatId -> [Message] in insert (_id) order
+const blockedUsers = new Set();
+let faults = { dropAcks: false, ackDelayMs: 0, emitDelayMs: 0, suppressEmit: false };
+// ObjectId-like: 4-byte seconds + 5 random bytes + 3-byte counter -> monotonic per insert (ruling P3-11).
+const idRandom = crypto.randomBytes(5).toString('hex');
+let idCounter = crypto.randomInt(0xffffff);
+const newId = () => {
+  idCounter = (idCounter + 1) % 0x1000000;
+  return Math.floor(Date.now() / 1000).toString(16).padStart(8, '0') + idRandom + idCounter.toString(16).padStart(6, '0');
+};
+const isId = (v) => typeof v === 'string' && /^[a-f0-9]{24}$/.test(v);
 const hash = (pw, salt) => crypto.scryptSync(pw, salt, 32).toString('hex'); // mock stand-in for bcrypt
 const publicUser = (u) => ({ id: u.id, username: u.username });
 const selfUser = (u) => ({ id: u.id, email: u.email, username: u.username });
@@ -55,6 +71,15 @@ const chatView = (c) => ({
   lastMessage: c.lastMessage,
   updatedAt: c.updatedAt,
 });
+
+function saveMessage(c, senderId, text, clientId) {
+  const message = { id: newId(), chatId: c.id, senderId, text, clientId: clientId ?? null, createdAt: new Date().toISOString() };
+  if (!messages.has(c.id)) messages.set(c.id, []);
+  messages.get(c.id).push(message);
+  c.lastMessage = message;
+  c.updatedAt = message.createdAt;
+  return message;
+}
 
 function createUser({ email, username, password }) {
   const salt = crypto.randomBytes(8).toString('hex');
@@ -109,6 +134,40 @@ async function route(req, res, url) {
   const key = `${req.method} ${pathname}`;
 
   if (key === 'GET /health') return send(res, 200, { status: 'ok', uptime: Math.floor((Date.now() - startedAt) / 1000), db: 'connected' });
+
+  if (key === 'POST /__mock/reset') {
+    users.clear();
+    chats.clear();
+    messages.clear();
+    blockedUsers.clear();
+    faults = { dropAcks: false, ackDelayMs: 0, emitDelayMs: 0, suppressEmit: false };
+    for (const s of io.of('/').sockets.values()) s.disconnect(true);
+    return send(res, 200, { ok: true });
+  }
+  if (key === 'POST /__mock/config') {
+    const b = await readJson(req);
+    faults = { ...faults, ...b };
+    return send(res, 200, { faults });
+  }
+  if (key === 'POST /__mock/block-user') {
+    const { username, blocked = true } = await readJson(req);
+    const u = [...users.values()].find((x) => x.username === username);
+    if (!u) throw new HttpError(404, 'NOT_FOUND', 'No such user');
+    if (blocked) {
+      blockedUsers.add(u.id);
+      // Close the transport (not a server-side "disconnect") so the client auto-reconnects.
+      for (const s of io.of('/').sockets.values()) if (s.data.userId === u.id) s.conn.close();
+    } else blockedUsers.delete(u.id);
+    return send(res, 200, { ok: true, blocked });
+  }
+  if (key === 'POST /__mock/bulk-messages') {
+    const { chatId, username, count = 1 } = await readJson(req);
+    const u = [...users.values()].find((x) => x.username === username);
+    const c = chats.get(chatId);
+    if (!u || !c) throw new HttpError(404, 'NOT_FOUND', 'No such user/chat');
+    for (let i = 1; i <= count; i++) saveMessage(c, u.id, `bulk ${i}`, null);
+    return send(res, 200, { ok: true, count: messages.get(chatId).length });
+  }
 
   if (key === 'POST /__mock/revoke-tokens') {
     secret = crypto.randomBytes(32);
@@ -174,14 +233,27 @@ async function route(req, res, url) {
     return send(res, 200, { chats: mine.map(chatView) });
   }
 
-  // GET /chats/:id/messages — P3; mock returns an empty page with participant checks.
+  // GET /chats/:id/messages?before=&limit= (contract + rulings P3-2, P3-9..P3-11, round 2 #3)
   const mm = /^\/chats\/([^/]+)\/messages$/.exec(pathname);
   if (req.method === 'GET' && mm) {
     const me = requireAuth(req);
-    const c = chats.get(mm[1]);
+    const chatId = decodeURIComponent(mm[1]);
+    if (!isId(chatId)) throw vErr('id', 'Invalid chat id');
+    const c = chats.get(chatId);
     if (!c) throw new HttpError(404, 'NOT_FOUND', 'Chat not found');
     if (!c.participantIds.includes(me.id)) throw new HttpError(403, 'FORBIDDEN', 'Not a participant of this chat');
-    return send(res, 200, { messages: [], hasMore: false });
+    const n = parseInt(url.searchParams.get('limit'), 10);
+    const limit = Number.isNaN(n) ? 30 : Math.min(50, Math.max(1, n));
+    const all = messages.get(chatId) || [];
+    let end = all.length;
+    const before = url.searchParams.get('before');
+    if (before !== null) {
+      if (!isId(before)) throw vErr('before', 'Invalid before cursor');
+      end = all.findIndex((m) => m.id === before);
+      if (end === -1) throw vErr('before', 'before is not a message in this chat');
+    }
+    const start = Math.max(0, end - limit);
+    return send(res, 200, { messages: all.slice(start, end), hasMore: start > 0 });
   }
 
   throw new HttpError(404, 'NOT_FOUND', `No route ${req.method} ${pathname}`);
@@ -214,6 +286,9 @@ const io = new Server(server, { path: '/socket.io', cors: { origin: true, creden
 io.use((socket, next) => {
   const claims = verifyJwt(socket.handshake.auth?.token);
   if (!claims) return next(new Error('unauthorized'));
+  // Blocked (test hook): kill the transport before CONNECT so the client's Manager keeps retrying,
+  // like a network outage. (A middleware error would stop client reconnection.)
+  if (blockedUsers.has(claims.sub)) return socket.conn.close();
   socket.data.userId = claims.sub;
   next();
 });
@@ -222,18 +297,35 @@ io.on('connection', (socket) => {
   socket.join(`user:${userId}`);
   socket.emit('hello', { message: 'welcome', socketId: socket.id, userId });
   console.log(`[socket] connected ${socket.id} user ${userId}`);
-  socket.on('message:send', (payload, ack) => {
-    const reply = typeof ack === 'function' ? ack : () => {};
-    const c = chats.get(payload?.chatId);
-    if (!c || !c.participantIds.includes(userId)) return reply({ ok: false, error: { code: 'FORBIDDEN', message: 'Not a participant of this chat' } });
-    const text = typeof payload?.text === 'string' ? payload.text : '';
-    if (!text.trim()) return reply({ ok: false, error: { code: 'MESSAGE_EMPTY', message: 'Message cannot be empty' } });
-    if (text.length > MAX_MESSAGE_LENGTH) return reply({ ok: false, error: { code: 'MESSAGE_TOO_LONG', message: `Max ${MAX_MESSAGE_LENGTH} characters` } });
-    const message = { id: newId(), chatId: c.id, senderId: userId, text, createdAt: new Date().toISOString() };
-    c.lastMessage = message;
-    c.updatedAt = message.createdAt;
+  // message:send { chatId, text, clientId } (contract + rulings P3-1..P3-5, round 2 #1)
+  socket.on('message:send', async (payload, ack) => {
+    let reply = typeof ack === 'function' ? ack : () => {};
+    if (faults.dropAcks) reply = () => {};
+    else if (faults.ackDelayMs) {
+      const r = reply;
+      reply = (body) => setTimeout(() => r(body), faults.ackDelayMs);
+    }
+    const fail = (code, message) => reply({ ok: false, error: { code, message } });
+    if (!payload || typeof payload !== 'object' || !isId(payload.chatId)) return fail('VALIDATION_ERROR', 'Invalid chatId');
+    const c = chats.get(payload.chatId);
+    if (!c || !c.participantIds.includes(userId)) return fail('FORBIDDEN', 'Not a participant of this chat');
+    const { text, clientId } = payload;
+    if (typeof text !== 'string') return fail('VALIDATION_ERROR', 'text must be a string');
+    if (!text.trim()) return fail('MESSAGE_EMPTY', 'Message cannot be empty');
+    if (text.length > MAX_MESSAGE_LENGTH) return fail('MESSAGE_TOO_LONG', `Max ${MAX_MESSAGE_LENGTH} characters`);
+    if (clientId !== undefined && clientId !== null && (typeof clientId !== 'string' || clientId.length > 64))
+      return fail('VALIDATION_ERROR', 'clientId must be a string of at most 64 chars');
+    if (clientId) {
+      // Idempotent: same (senderId, clientId) -> ack the existing message, no save, no re-emit.
+      const existing = (messages.get(c.id) || []).find((m) => m.senderId === userId && m.clientId === clientId);
+      if (existing) return reply({ ok: true, message: existing });
+    }
+    const message = saveMessage(c, userId, text, clientId);
     reply({ ok: true, message });
-    for (const pid of c.participantIds) io.to(`user:${pid}`).emit('message:new', { message, chat: chatView(c) });
+    if (faults.suppressEmit) return;
+    const emit = () => { for (const pid of c.participantIds) io.to(`user:${pid}`).emit('message:new', { message, chat: chatView(c) }); };
+    if (faults.emitDelayMs) setTimeout(emit, faults.emitDelayMs);
+    else emit();
   });
 });
 
