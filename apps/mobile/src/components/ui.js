@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit';
 import { colors } from '../theme';
 
 /** Shown after SLOW_THRESHOLD_MS (4s) on any request or connect (Render cold start, R-4). */
@@ -84,12 +85,25 @@ export function StaleNotice({ onRetry, testID }) {
   );
 }
 
-/** "Too many attempts, try again in Ns" while an auth form is locked by Retry-After (not re-announced every tick). */
+/**
+ * "Too many attempts, try again in Ns" while an auth form is locked by Retry-After.
+ * DEF-003: the static reason is announced once (announceForAccessibility on mount) and stays
+ * reachable as a static, visually hidden text; the visible ticking text is hidden from
+ * accessibility so it isn't re-read every second. The disabled submit is left as it is.
+ */
 export function RateLimitCountdown({ message }) {
+  useEffect(() => {
+    AccessibilityInfo.announceForAccessibility?.(RATE_LIMITED_MESSAGE);
+  }, []);
   return (
-    <Text style={[s.errorText, { marginVertical: 8 }]} accessibilityLiveRegion="none" testID="form-error">
-      {message}
-    </Text>
+    <View style={{ marginVertical: 8 }}>
+      <Text style={s.srOnly} accessibilityRole="alert" testID="rate-limit-announce">
+        {RATE_LIMITED_MESSAGE}
+      </Text>
+      <Text style={s.errorText} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden aria-hidden testID="form-error">
+        {message}
+      </Text>
+    </View>
   );
 }
 
@@ -162,6 +176,7 @@ export const s = StyleSheet.create({
   btnSecondaryText: { color: colors.text, fontWeight: '600', fontSize: 15 },
   linkBtn: { paddingVertical: 4, paddingHorizontal: 2 },
   linkText: { color: colors.primary, fontWeight: '600', fontSize: 15 },
+  srOnly: { position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 },
   stale: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.hintBg, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 2, marginHorizontal: 12, marginBottom: 6 },
   staleText: { color: colors.hint, fontSize: 14, fontWeight: '600' },
   field: { marginBottom: 12 },
