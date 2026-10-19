@@ -1,8 +1,9 @@
 # Web app (React + Vite)
 
-React client for the Render backend. Phase 2: sign up, log in (email **or** username), log out,
-authenticated Socket.IO, username search, and start/open a 1:1 chat (placeholder chat view;
-messaging lands in Phase 3). Built to the LOCKED Phase 2 + 3 contract in the project's
+React client for the Render backend: sign up, log in (email **or** username), log out,
+authenticated Socket.IO, username search, start/open a 1:1 chat, chat list with live last-message
+previews, real-time messaging with ack/Failed/Retry, history pagination on scroll-up, and reconnect
+catch-up. Built to the LOCKED Phase 2 + 3 contract and its rulings in the project's
 `interface-contracts.md`.
 
 ## Env
@@ -29,15 +30,26 @@ The browser enforces CORS: the backend's `CLIENT_ORIGINS` must include the page 
 
 ### Dev-only contract mock
 
-`scripts/mock-server.mjs` is an in-memory mock of the LOCKED contract (auth, search, chats, socket
-auth + `hello`, `message:send`). It is never imported by `src/`, so it is not in the production bundle.
+`scripts/mock-server.mjs` is an in-memory mock of the LOCKED contract (auth, search, chats, history
+pagination, socket auth + `hello`, idempotent `message:send` with `clientId`, `message:new`). It is
+never imported by `src/`, so it is not in the production bundle. Every start is empty.
 
 ```bash
 MOCK_SEED=1 npm run mock                              # http://localhost:4100, users alice/alicia/bob, password "password123"
 VITE_API_URL=http://localhost:4100 npm run dev
 MOCK_LATENCY_MS=6000 MOCK_SEED=1 npm run mock         # simulate a cold start
-curl -X POST http://localhost:4100/__mock/revoke-tokens   # mock-only: invalidate every token (401 / socket 'unauthorized')
 ```
+
+Mock-only test hooks (not part of the contract), all `POST`:
+
+| Hook | Body | Effect |
+|---|---|---|
+| `/__mock/reset` | — | wipe all users, chats, messages, faults |
+| `/__mock/revoke-tokens` | — | every token now 401s / socket `unauthorized` |
+| `/__mock/config` | `{ dropAcks, ackDelayMs, emitDelayMs, suppressEmit, rateLimitSend, sendErrorCode }` | fault injection for `message:send` (`rateLimitSend` → ack `RATE_LIMITED`; `sendErrorCode` → ack `ok:false` with that code) |
+| `/__mock/config` | `{ rateLimitAuth, rateLimitRest, restDelayMs, failRest: { status, match } }` | REST faults: 429 `RATE_LIMITED` on signup/login or other REST, delay every REST call (cold start), fail calls whose `"METHOD /path?query"` contains `match` |
+| `/__mock/block-user` | `{ username, blocked }` | simulated outage for one user's sockets (client keeps retrying) |
+| `/__mock/bulk-messages` | `{ chatId, username, count }` | insert `count` messages (`bulk 1..n`) |
 
 ### Node smoke check (no CORS in Node)
 
@@ -48,7 +60,7 @@ Since Phase 2 the socket needs a JWT; without `RTC_TOKEN` the hello check fails 
 
 ## Routes (hash-based, no rewrites needed on Vercel)
 
-`#/login`, `#/signup`, `#/` (user search), `#/chats/<chatId>` (chat view placeholder).
+`#/login`, `#/signup`, `#/` (user search + chat list), `#/chats/<chatId>` (thread + composer).
 
 ## Structure
 
@@ -57,6 +69,17 @@ Since Phase 2 the socket needs a JWT; without `RTC_TOKEN` the hello check fails 
 - `src/lib/tokenStore.js`: JWT in `localStorage` (`rtc.token`)
 - `src/auth/AuthContext.jsx`: session state (checking / authenticated / anonymous / unverified)
 - `src/useSocket.js` + `src/socket/SocketContext.jsx`: one socket per token (`auth: { token }`)
-- `src/chats/ChatsContext.jsx`: chat cache + create-or-get chat
-- `src/pages/*`: Login, Signup, Home (search), Chat (placeholder)
+- `src/chats/ChatsContext.jsx`: chat store: list, threads (pagination), pending sends (clientId,
+  ack/10s timeout/Failed/Retry), `message:new` merge, reconnect refetch
+- `src/chats/messageUtils.js`: ordering / merge / dedupe helpers
+- `src/components/ChatList.jsx`: chat list with one-line previews
+- `src/pages/*`: Login, Signup, Home (search + chat list), Chat (thread + composer, 2000-char counter)
 - `src/components/StatusBar.jsx`: footer with API health + live socket status and the cold-start hint
+
+## UI states
+
+Every request has a loading state; after 4 s it adds "Waking server…" (Render free tier cold start) and
+gives up at 70 s with an error and **Retry**. Errors use `role="alert"`, loading/status lines `role="status"`.
+`RATE_LIMITED` (HTTP 429 or socket ack) shows "Too many attempts, try again shortly". Failed sends show
+Retry + Discard for timeout / disconnect / `RATE_LIMITED` / `SERVER_ERROR`, and Discard only for
+`VALIDATION_ERROR` / `MESSAGE_EMPTY` / `MESSAGE_TOO_LONG` / `FORBIDDEN`.

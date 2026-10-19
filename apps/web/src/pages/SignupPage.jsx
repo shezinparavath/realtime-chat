@@ -83,7 +83,7 @@ export function SignupPage() {
           </button>
         )}
         {submitting && slow && <WakingHint />}
-        <button type="submit" className="primary" disabled={submitting}>
+        <button type="submit" className="primary" disabled={submitting} aria-busy={submitting || undefined} data-testid="signup-submit">
           {submitting ? (slow ? 'Waking server…' : 'Creating account…') : 'Sign up'}
         </button>
       </form>

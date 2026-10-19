@@ -14,5 +14,11 @@ export const REQUEST_TIMEOUT_MS = 70000;
 export const SEARCH_DEBOUNCE_MS = 300;
 // localStorage key for the JWT (LOCKED contract: web stores the token in localStorage).
 export const TOKEN_STORAGE_KEY = 'rtc.token';
-// Shared constant from the LOCKED contract (used by messaging in P3).
+// Shared constant from the LOCKED contract (mirrors the server; text.length units).
 export const MAX_MESSAGE_LENGTH = 2000;
+// Page size for GET /chats/:id/messages (contract default 30, max 50).
+export const MESSAGES_PAGE_SIZE = 30;
+// LOCKED ruling P4-2: a send with no ack within this long is marked Failed.
+export const SEND_ACK_TIMEOUT_MS = 10000;
+// Socket.IO per-attempt connect timeout: same 70s cold-start limit as REST and /health.
+export const CONNECT_TIMEOUT_MS = 70000;

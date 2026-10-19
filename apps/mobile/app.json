@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "mobile",
+    "name": "Realtime Chat",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -26,6 +26,12 @@
         "projectId": "22746f68-a24a-4fc1-a1af-b9bb155cbd8a"
       }
     },
-    "owner": "shezinparavath"
+    "owner": "shezinparavath",
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-secure-store"
+    ],
+    "scheme": "realtimechat"
   }
 }
