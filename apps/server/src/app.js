@@ -6,6 +6,8 @@ const cors = require('cors');
 const { Server } = require('socket.io');
 const { getDbStatus } = require('./db');
 const { authRouter } = require('./routes/auth');
+const { usersRouter } = require('./routes/users');
+const { chatsRouter } = require('./routes/chats');
 const { attachSocketHandlers } = require('./socket');
 const { notFoundHandler, errorHandler } = require('./errors');
 
@@ -43,6 +45,8 @@ function createApp(config) {
   });
 
   app.use('/auth', authRouter(config));
+  app.use('/users', usersRouter(config));
+  app.use('/chats', chatsRouter(config));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

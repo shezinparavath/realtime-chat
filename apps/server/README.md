@@ -29,8 +29,16 @@ All errors: `{ "error": { "code", "message", "field?" } }`.
 | POST | `/auth/signup` | public | `{ email, username, password }` → 201 `{ token, user }` |
 | POST | `/auth/login` | public | `{ identifier, password }` → 200 `{ token, user }` |
 | GET | `/auth/me` | Bearer | 200 `{ user }` |
+| GET | `/users/search?q=` | Bearer | prefix, case-insensitive, excludes self, max 20 → `{ users }` |
+| POST | `/chats` | Bearer | `{ userId }` → 201 new / 200 existing `{ chat }` |
+| GET | `/chats` | Bearer | `{ chats }` sorted by `updatedAt` desc |
+| GET | `/chats/:id/messages?before=&limit=` | Bearer | `{ messages (oldest→newest), hasMore }`; limit default 30, max 50 |
 
 Socket.IO: `io(API_URL, { auth: { token } })`; bad/missing token → `connect_error` with `err.message === 'unauthorized'`. On connect: room `user:<id>` + `hello { message:'welcome', socketId, userId }`.
+
+- `message:send { chatId, text }` + ack → `{ ok:true, message }` or `{ ok:false, error:{ code, message } }` (`FORBIDDEN`, `MESSAGE_EMPTY`, `MESSAGE_TOO_LONG`, ...).
+- Server → `message:new { message, chat }` to both participants' `user:` rooms (sender included).
+- `MAX_MESSAGE_LENGTH = 2000` exported from `src/constants.js`.
 
 ## Render
 

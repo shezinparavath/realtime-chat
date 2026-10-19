@@ -8,6 +8,7 @@ const {
   PASSWORD_MIN,
   PASSWORD_MAX,
   EMAIL_MAX,
+  MAX_MESSAGE_LENGTH,
 } = require('./constants');
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -72,7 +73,48 @@ function validateLogin(body) {
   return { identifier, isEmail, password: b.password };
 }
 
+/**
+ * Message text rules: must be a string; text.trim() non-empty (MESSAGE_EMPTY);
+ * text.length <= MAX_MESSAGE_LENGTH on the RAW string (MESSAGE_TOO_LONG).
+ * The raw text is what gets stored.
+ */
+function validateMessageText(text) {
+  if (typeof text !== 'string') {
+    throw new AppError('VALIDATION_ERROR', 'text must be a string', 'text');
+  }
+  if (text.trim().length === 0) {
+    throw new AppError('MESSAGE_EMPTY', 'Message cannot be empty');
+  }
+  if (text.length > MAX_MESSAGE_LENGTH) {
+    throw new AppError('MESSAGE_TOO_LONG', `Message cannot exceed ${MAX_MESSAGE_LENGTH} characters`);
+  }
+  return text;
+}
+
+const CLIENT_ID_MAX = 64;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Optional clientId (rulings round 2 #1): undefined/null → null; otherwise a
+ * UUID-shaped string (8-4-4-4-12 hex, any version) of at most 64 chars, else
+ * VALIDATION_ERROR field clientId. Stored as sent.
+ */
+function validateClientId(clientId) {
+  if (clientId === undefined || clientId === null) return null;
+  if (typeof clientId !== 'string' || clientId.length > CLIENT_ID_MAX || !UUID_PATTERN.test(clientId)) {
+    throw new AppError('VALIDATION_ERROR', 'clientId must be a UUID string', 'clientId');
+  }
+  return clientId;
+}
+
+function isObjectIdString(v) {
+  return typeof v === 'string' && /^[a-f0-9]{24}$/i.test(v);
+}
+
 module.exports = {
+  validateMessageText,
+  validateClientId,
+  isObjectIdString,
   EMAIL_PATTERN,
   normalizeEmail,
   normalizeUsername,

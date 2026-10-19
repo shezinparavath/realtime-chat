@@ -3,7 +3,8 @@
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
-const { startServer } = require('./helpers');
+const { startServer, connectSocket, once, emitAck, TEST_SECRET } = require('./helpers');
+const { signToken } = require('../src/lib/jwt');
 
 describe('without MONGODB_URI', () => {
   let srv;
@@ -27,6 +28,16 @@ describe('without MONGODB_URI', () => {
     assert.ok(Date.now() - t0 < 3000, 'should not wait for mongoose buffering');
     const health = await request(srv.app).get('/health').expect(200);
     assert.equal(health.body.db, 'not_configured');
+  });
+
+  it('message:send acks SERVER_ERROR', async () => {
+    const token = signToken({ id: '0123456789abcdef01234567', username: 'a' }, TEST_SECRET);
+    const s = connectSocket(srv.url, token);
+    await once(s, 'hello');
+    const ack = await emitAck(s, 'message:send', { chatId: '0123456789abcdef01234567', text: 'hi' });
+    assert.deepEqual(ack.ok, false);
+    assert.equal(ack.error.code, 'SERVER_ERROR');
+    s.close();
   });
 });
 
