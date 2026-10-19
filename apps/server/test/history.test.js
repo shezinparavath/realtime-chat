@@ -6,7 +6,7 @@ const request = require('supertest');
 const { startServer, signup } = require('./helpers');
 const { sendMessage } = require('../src/services/messages');
 
-describe('GET /chats/:id/messages pagination', () => {
+describe('GET /chats/:id/messages pagination (sorted by _id)', () => {
   let srv;
   let alice;
   let bob;
@@ -60,15 +60,25 @@ describe('GET /chats/:id/messages pagination', () => {
     assert.deepEqual(seen, all);
   });
 
-  it('limit clamps to 50; invalid limit → 400', async () => {
-    const res = await get(alice, '?limit=500').expect(200);
-    assert.equal(res.body.messages.length, 50);
-    for (const l of ['0', '-1', 'abc', '1.5']) {
-      const r = await get(alice, `?limit=${l}`);
-      assert.equal(r.status, 400);
-      assert.equal(r.body.error.code, 'VALIDATION_ERROR');
-      assert.equal(r.body.error.field, 'limit');
+  it('limit is clamped, never 400 (ruling P3-10)', async () => {
+    const cases = { 500: 50, 51: 50, 50: 50, 0: 1, '-1': 1, '-100': 1, abc: 30, '': 30, '1.5': 1, '7': 7 };
+    for (const [l, expected] of Object.entries(cases)) {
+      const res = await get(alice, `?limit=${encodeURIComponent(l)}`);
+      assert.equal(res.status, 200, `limit=${l}`);
+      assert.equal(res.body.messages.length, expected, `limit=${l}`);
     }
+    const arr = await get(alice, '?limit=5&limit=6').expect(200);
+    assert.equal(arr.body.messages.length, 30);
+  });
+
+  it('hasMore is exact: limit = remaining count → false (ruling P3-9)', async () => {
+    // 65 messages: newest 35 then before=all[30] leaves exactly 30 older
+    const res = await get(alice, `?limit=30&before=${all[30]}`).expect(200);
+    assert.equal(res.body.messages.length, 30);
+    assert.deepEqual(res.body.messages.map((m) => m.id), all.slice(0, 30));
+    assert.equal(res.body.hasMore, false);
+    const all65 = await get(alice, '?limit=50').expect(200);
+    assert.equal(all65.body.hasMore, true);
   });
 
   it('before = oldest → [] hasMore false', async () => {
@@ -76,12 +86,16 @@ describe('GET /chats/:id/messages pagination', () => {
     assert.deepEqual(res.body, { messages: [], hasMore: false });
   });
 
-  it('bad before → 400', async () => {
-    let r = await get(alice, '?before=xyz');
-    assert.equal(r.body.error.code, 'VALIDATION_ERROR');
-    r = await get(alice, '?before=0123456789abcdef01234567');
-    assert.equal(r.status, 400);
-    assert.equal(r.body.error.field, 'before');
+  it('bad before → 400 field before, incl. id from another chat (ruling P3-11)', async () => {
+    const other = await request(srv.app).post('/chats').set(auth(bob)).send({ userId: carol.user.id });
+    const { message } = await sendMessage({ userId: carol.user.id, chatId: other.body.chat.id, text: 'secret' });
+    for (const b of ['xyz', '0123456789abcdef01234567', message.id]) {
+      const r = await get(alice, `?before=${b}`);
+      assert.equal(r.status, 400, b);
+      assert.equal(r.body.error.code, 'VALIDATION_ERROR');
+      assert.equal(r.body.error.field, 'before');
+      assert.ok(!JSON.stringify(r.body).includes('secret'));
+    }
   });
 
   it('non-participant → 403 FORBIDDEN; unknown chat → 404; bad id → 400; no token → 401', async () => {
@@ -93,6 +107,7 @@ describe('GET /chats/:id/messages pagination', () => {
     assert.equal(r.body.error.code, 'NOT_FOUND');
     r = await request(srv.app).get('/chats/zzz/messages').set(auth(alice));
     assert.equal(r.status, 400);
+    assert.equal(r.body.error.code, 'VALIDATION_ERROR');
     r = await request(srv.app).get(`/chats/${chatId}/messages`);
     assert.equal(r.status, 401);
   });

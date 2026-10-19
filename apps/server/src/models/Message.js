@@ -13,7 +13,7 @@ const messageSchema = new Schema({
   createdAt: { type: Date, default: () => new Date() },
 });
 
-// History pagination: newest-first within a chat, (createdAt, _id) tiebreak.
-messageSchema.index({ chatId: 1, createdAt: -1, _id: -1 });
+// History pagination (ruling P3-11): sort { _id: -1 }, cursor _id < before.
+messageSchema.index({ chatId: 1, _id: -1 });
 
 module.exports = mongoose.models.Message || mongoose.model('Message', messageSchema);

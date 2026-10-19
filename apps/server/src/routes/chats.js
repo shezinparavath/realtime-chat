@@ -15,13 +15,14 @@ const { MESSAGES_PAGE_DEFAULT, MESSAGES_PAGE_MAX } = require('../constants');
 
 const { pairFor } = Chat;
 
-/** limit: default 30; integer >= 1; values above 50 are clamped to 50. */
+/**
+ * limit (ruling P3-10): never errors. Missing / non-numeric → 30;
+ * otherwise truncated to an integer and clamped to 1..50.
+ */
 function parseLimit(raw) {
-  if (raw === undefined || raw === '') return MESSAGES_PAGE_DEFAULT;
-  if (typeof raw !== 'string' || !/^\d+$/.test(raw) || Number(raw) < 1) {
-    throw new AppError('VALIDATION_ERROR', 'limit must be a positive integer', 'limit');
-  }
-  return Math.min(Number(raw), MESSAGES_PAGE_MAX);
+  const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN;
+  if (!Number.isFinite(n)) return MESSAGES_PAGE_DEFAULT;
+  return Math.min(Math.max(Math.trunc(n), 1), MESSAGES_PAGE_MAX);
 }
 
 async function loadChat(filter) {
@@ -59,18 +60,16 @@ function chatsRouter(config) {
         if (!isObjectIdString(before)) {
           throw new AppError('VALIDATION_ERROR', 'before must be a message id', 'before');
         }
-        const cursor = await Message.findOne({ _id: before, chatId: chat._id }, { createdAt: 1 }).lean();
+        const cursor = await Message.exists({ _id: before, chatId: chat._id });
         if (!cursor) {
           throw new AppError('VALIDATION_ERROR', 'before is not a message in this chat', 'before');
         }
-        filter.$or = [
-          { createdAt: { $lt: cursor.createdAt } },
-          { createdAt: cursor.createdAt, _id: { $lt: cursor._id } },
-        ];
+        filter._id = { $lt: cursor._id };
       }
 
+      // Fetch limit+1 so hasMore is exact (ruling P3-9).
       const docs = await Message.find(filter)
-        .sort({ createdAt: -1, _id: -1 })
+        .sort({ _id: -1 })
         .limit(limit + 1)
         .lean();
       const hasMore = docs.length > limit;
