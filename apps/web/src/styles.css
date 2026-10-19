@@ -1,0 +1,24 @@
+:root {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #1f2328;
+  background: #f6f8fa;
+  line-height: 1.5;
+}
+body { margin: 0; }
+main { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
+h1 { font-size: 1.4rem; }
+h2 { font-size: 1.1rem; display: flex; align-items: center; gap: 8px; margin-top: 0; }
+.card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 16px; margin: 16px 0; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0 0 12px; }
+dt { font-weight: 600; }
+dd { margin: 0; word-break: break-all; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+.muted { color: #656d76; }
+.hint { color: #9a6700; }
+.error { color: #cf222e; }
+button { padding: 6px 14px; border-radius: 6px; border: 1px solid #d0d7de; background: #f6f8fa; cursor: pointer; }
+button:hover { background: #eef1f4; }
+.badge { font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #eaeef2; color: #424a53; }
+.badge-ok, .badge-connected, .badge-db-connected { background: #dafbe1; color: #1a7f37; }
+.badge-loading, .badge-connecting, .badge-reconnecting, .badge-db-not_configured { background: #fff8c5; color: #9a6700; }
+.badge-error, .badge-disconnected, .badge-db-disconnected { background: #ffebe9; color: #cf222e; }
