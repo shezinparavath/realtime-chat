@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit.js';
 
 export function Field({ id, label, error, hint, ...inputProps }) {
   const describedBy = [error && `${id}-error`, hint && `${id}-hint`].filter(Boolean).join(' ') || undefined;
@@ -95,13 +96,19 @@ export function StaleNotice({ onRetry, testId }) {
 
 /**
  * "Too many attempts, try again in Ns" while an auth form is locked by Retry-After.
- * role=timer (not alert) so screen readers aren't interrupted every second; the error styling
- * and data-testid match FormError.
+ * DEF-003: the static reason is announced once through an sr-only role=alert (same pattern as the
+ * Failed send bubble); the visible ticking text is aria-hidden so it isn't re-read every second.
+ * The disabled submit (with its title) is left as it is.
  */
 export function RateLimitCountdown({ message }) {
   return (
-    <p className="error form-error" role="timer" aria-live="off" data-testid="form-error" data-rate-limited="true">
-      {message}
-    </p>
+    <div className="form-error" data-rate-limited="true">
+      <p className="sr-only" role="alert" data-testid="rate-limit-announce">
+        {RATE_LIMITED_MESSAGE}
+      </p>
+      <p className="error" aria-hidden="true" data-testid="form-error">
+        {message}
+      </p>
+    </div>
   );
 }
