@@ -8,6 +8,7 @@ Node.js + Express + Socket.IO backend for realtime-chat. CommonJS, Node >= 18.
 |---|---|
 | `npm start` | Start HTTP + Socket.IO (`node src/index.js`) |
 | `npm test` | Run the `node:test` suite (uses an in-memory MongoDB via `mongodb-memory-server-core`) |
+| `npm run seed` | Idempotent seed: two test accounts + one sample chat (see below) |
 
 ## Env
 
@@ -55,4 +56,23 @@ npm install
 npm test
 npm start
 # curl http://localhost:4000/health
+```
+
+## Seed (`npm run seed`)
+
+Upserts two test accounts, one chat between them and 3 sample messages. Safe to re-run: nothing is duplicated, and a changed password is re-hashed.
+
+| Var | Required | Default |
+|---|---|---|
+| `MONGODB_URI` | yes (refuses to run without it) | — |
+| `SEED_USER1_PASSWORD`, `SEED_USER2_PASSWORD` | yes (no default passwords) | — |
+| `SEED_USER1_EMAIL` / `SEED_USER1_USERNAME` | no | `demo.alice@example.com` / `demo_alice` |
+| `SEED_USER2_EMAIL` / `SEED_USER2_USERNAME` | no | `demo.bob@example.com` / `demo_bob` |
+| `SEED_CONFIRM` | `yes` required for any non-local host (or `npm run seed -- --yes`) | — |
+
+The script prints the target (`[seed] target: <scheme>://<hosts>/<db>`, credentials stripped) before it writes anything.
+
+```bash
+MONGODB_URI=mongodb://127.0.0.1:27017/realtime-chat \
+SEED_USER1_PASSWORD=... SEED_USER2_PASSWORD=... npm run seed
 ```
