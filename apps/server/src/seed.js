@@ -134,7 +134,7 @@ async function runSeed(env, log = console.log) {
     const senderId = [u1, u2][senderIdx]._id;
     const r = await Message.updateOne(
       { chatId: chat._id, senderId, text },
-      { $setOnInsert: { chatId: chat._id, senderId, text, createdAt: new Date(base + i * 60_000) } },
+      { $setOnInsert: { chatId: chat._id, senderId, text, clientId: null, createdAt: new Date(base + i * 60_000) } },
       { upsert: true }
     );
     if (r.upsertedCount) inserted += 1;
@@ -148,7 +148,13 @@ async function runSeed(env, log = console.log) {
       { _id: chat._id },
       {
         $set: {
-          lastMessage: { _id: newest._id, senderId: newest.senderId, text: newest.text, createdAt: newest.createdAt },
+          lastMessage: {
+            _id: newest._id,
+            senderId: newest.senderId,
+            text: newest.text,
+            clientId: typeof newest.clientId === 'string' ? newest.clientId : null,
+            createdAt: newest.createdAt,
+          },
           updatedAt: newest.createdAt,
         },
       }

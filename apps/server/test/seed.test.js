@@ -96,6 +96,9 @@ describe('seed against in-memory MongoDB', () => {
     const chat = await Chat.findById(s1.chatId).lean();
     assert.equal(chat.lastMessage.text, SAMPLE_MESSAGES[SAMPLE_MESSAGES.length - 1][1]);
     assert.equal(chat.updatedAt.getTime(), chat.lastMessage.createdAt.getTime());
+    assert.equal(chat.lastMessage.clientId, null);
+    const msgs = await Message.find().lean();
+    assert.ok(msgs.every((m) => m.clientId === null), 'seed messages have clientId null');
     assert.ok(!logs.join('\n').includes('local-test-pw'), 'never logs passwords');
 
     await runSeed({ ...ENV, SEED_USER1_PASSWORD: 'rotated-pw-123' }, () => {});
