@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
-import { API_URL, SLOW_THRESHOLD_MS, SOCKET_PATH } from './config.js';
+import { API_URL, CONNECT_TIMEOUT_MS, SLOW_THRESHOLD_MS, SOCKET_PATH } from './config.js';
 
 /**
  * Authenticated Socket.IO connection (LOCKED contract): io(API_URL, { auth: { token } }).
@@ -48,7 +48,7 @@ export function useSocket(token, { onUnauthorized } = {}) {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 10000,
-      timeout: 60000, // Render cold start can take ~50s
+      timeout: CONNECT_TIMEOUT_MS, // per-attempt limit; Render cold start can take ~50s, then Socket.IO retries
     });
     setSocket(s);
 
@@ -68,6 +68,7 @@ export function useSocket(token, { onUnauthorized } = {}) {
     s.on('hello', (payload) => setHello(payload));
     s.on('disconnect', (reason) => {
       setTransport(null);
+      console.info('[socket] disconnected:', reason); // LOCKED hardening: log the disconnect reason
       // Server-initiated disconnects are not auto-retried by Socket.IO. Reconnect once so the
       // handshake re-checks the token: a revoked/expired one then fails with 'unauthorized'.
       if (reason === 'io server disconnect') {

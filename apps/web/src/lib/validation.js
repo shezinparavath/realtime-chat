@@ -1,3 +1,5 @@
+import { isRetryable } from './api.js';
+
 // Client-side checks mirroring the LOCKED contract (A-14 adopted). The server stays the authority;
 // these only save a round trip. Each validator returns { field: message } (empty object = valid).
 
@@ -89,8 +91,10 @@ export function serverErrorToFormErrors(err, knownFields) {
   return { _form: message };
 }
 
-/** Timeouts / network failures (cold start, offline) get an explicit Retry button (LOCKED ruling P4-4). */
-const RETRYABLE = new Set(['TIMEOUT', 'NETWORK_ERROR', 'SERVER_ERROR']);
+/**
+ * Timeouts, network failures (cold start, offline), 5xx and RATE_LIMITED get an explicit Retry
+ * button (LOCKED ruling P4-4, hardening). Validation / credential errors don't.
+ */
 export function withRetry(err, formErrors) {
-  return RETRYABLE.has(err?.code) ? { ...formErrors, _retry: true } : formErrors;
+  return isRetryable(err) ? { ...formErrors, _retry: true } : formErrors;
 }

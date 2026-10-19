@@ -10,7 +10,7 @@ export function Field({ id, label, error, hint, ...inputProps }) {
         </small>
       )}
       {error && (
-        <small id={`${id}-error`} className="error" data-testid={`${id}-error`}>
+        <small id={`${id}-error`} className="error" aria-live="polite" data-testid={`${id}-error`}>
           {error}
         </small>
       )}
@@ -27,10 +27,35 @@ export function FormError({ message }) {
   );
 }
 
+/** Shown after SLOW_THRESHOLD_MS (4s) on any request or connect (Render cold start, R-4). */
+export const WAKING_TEXT = 'Waking server…';
 export function WakingHint({ children }) {
   return (
-    <p className="hint" role="status">
-      {children || 'Waking the server… The free instance sleeps when idle and can take 30–60 seconds to start.'}
+    <p className="hint" role="status" data-testid="waking-hint">
+      {children || `${WAKING_TEXT} The free server sleeps when idle and can take up to a minute to start.`}
     </p>
+  );
+}
+
+/** Polite live status line (loading text etc.). */
+export function Status({ children, className = 'muted', ...rest }) {
+  return (
+    <p className={className} role="status" {...rest}>
+      {children}
+    </p>
+  );
+}
+
+/** Error block: assertive alert + optional Retry. */
+export function ErrorBlock({ message, onRetry, retryLabel = 'Retry', testId }) {
+  return (
+    <div role="alert" className="error-block" data-testid={testId}>
+      <p className="error">{message}</p>
+      {onRetry && (
+        <button type="button" onClick={onRetry}>
+          {retryLabel}
+        </button>
+      )}
+    </div>
   );
 }

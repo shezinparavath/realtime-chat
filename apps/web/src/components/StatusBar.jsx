@@ -15,7 +15,7 @@ export function StatusBar({ showSocket }) {
 
   return (
     <footer className="status-bar" data-testid="status-bar">
-      <button type="button" className="link" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+      <button type="button" className="link" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="Connection status details">
         <span className={`dot dot-${health.state}`} aria-hidden="true" /> API {health.state}
         {showSocket && (
           <>
@@ -24,9 +24,9 @@ export function StatusBar({ showSocket }) {
           </>
         )}
       </button>
-      {waking && <span className="hint"> Waking the server, this can take up to a minute…</span>}
+      <span aria-live="polite">{waking && <span className="hint" data-testid="statusbar-waking"> Waking server… this can take up to a minute.</span>}</span>
       {health.state === 'error' && (
-        <button type="button" className="link" onClick={health.retry}>
+        <button type="button" className="link" onClick={health.retry} aria-label="Retry API health check" data-testid="health-retry">
           Retry
         </button>
       )}

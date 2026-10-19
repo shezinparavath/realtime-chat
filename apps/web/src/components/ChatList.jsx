@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { otherParticipant, useChats } from '../chats/ChatsContext.jsx';
 import { chatPath } from '../router.js';
-import { WakingHint } from './Field.jsx';
+import { ErrorBlock, WakingHint } from './Field.jsx';
 import { formatTime } from './time.js';
 
 /**
@@ -25,20 +25,17 @@ export function ChatList() {
       <h2 id="chats-title">Chats</h2>
       {showLoading && (
         <>
-          <p className="muted">Loading chats…</p>
+          <p className="muted" role="status" data-testid="chats-loading">
+            Loading chats…
+          </p>
           {listState.slow && <WakingHint />}
         </>
       )}
       {listState.status === 'error' && (
-        <div role="alert">
-          <p className="error">Could not load chats: {listState.error}</p>
-          <button type="button" onClick={() => loadChats().catch(() => {})}>
-            Retry
-          </button>
-        </div>
+        <ErrorBlock message={`Could not load chats: ${listState.error}`} onRetry={() => loadChats().catch(() => {})} testId="chats-error" />
       )}
       {listState.status === 'ok' && sortedChats.length === 0 && (
-        <p className="muted" data-testid="chats-empty">
+        <p className="muted" role="status" data-testid="chats-empty">
           No chats yet. Search for someone above to start one.
         </p>
       )}

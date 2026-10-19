@@ -9,8 +9,12 @@
 // Test hooks (mock only, NOT part of the contract; all under /__mock):
 //   POST /__mock/reset              wipe all users/chats/messages (back to a clean state)
 //   POST /__mock/revoke-tokens      rotate the signing secret -> every existing token now 401s
-//   POST /__mock/config             { dropAcks, ackDelayMs, emitDelayMs, suppressEmit } fault injection
-//                                   for message:send (all default off)
+//   POST /__mock/config             fault injection (all default off):
+//                                   message:send: { dropAcks, ackDelayMs, emitDelayMs, suppressEmit, rateLimitSend,
+//                                   sendErrorCode (ack ok:false with that code) }
+//                                   REST: { rateLimitAuth (429 on /auth/signup|login), rateLimitRest (429 on other
+//                                   non-hook REST), restDelayMs (delay non-hook REST), failRest: { status, match } (fail REST
+//                                   whose "METHOD /path?query" contains match) }
 //   POST /__mock/block-user         { username, blocked } drop that user's sockets and close new
 //                                   transports before CONNECT (simulated outage) -> client keeps retrying
 //   POST /__mock/bulk-messages      { chatId, username, count } insert count messages from username
@@ -53,7 +57,8 @@ const users = new Map(); // id -> { id, email, username, passwordHash, salt }
 const chats = new Map(); // id -> { id, participantIds:[a,b], lastMessage, createdAt, updatedAt }
 const messages = new Map(); // chatId -> [Message] in insert (_id) order
 const blockedUsers = new Set();
-let faults = { dropAcks: false, ackDelayMs: 0, emitDelayMs: 0, suppressEmit: false };
+const NO_FAULTS = { dropAcks: false, ackDelayMs: 0, emitDelayMs: 0, suppressEmit: false, rateLimitAuth: false, rateLimitRest: false, rateLimitSend: false, sendErrorCode: null, restDelayMs: 0, failRest: null };
+let faults = { ...NO_FAULTS };
 // ObjectId-like: 4-byte seconds + 5 random bytes + 3-byte counter -> monotonic per insert (ruling P3-11).
 const idRandom = crypto.randomBytes(5).toString('hex');
 let idCounter = crypto.randomInt(0xffffff);
@@ -140,7 +145,7 @@ async function route(req, res, url) {
     chats.clear();
     messages.clear();
     blockedUsers.clear();
-    faults = { dropAcks: false, ackDelayMs: 0, emitDelayMs: 0, suppressEmit: false };
+    faults = { ...NO_FAULTS };
     for (const s of io.of('/').sockets.values()) s.disconnect(true);
     return send(res, 200, { ok: true });
   }
@@ -269,6 +274,16 @@ const server = http.createServer(async (req, res) => {
   if (LATENCY) await new Promise((r) => setTimeout(r, LATENCY));
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
+    const hookOrHealth = url.pathname.startsWith('/__mock/') || url.pathname === '/health';
+    if (!hookOrHealth) {
+      if (faults.restDelayMs) await new Promise((r) => setTimeout(r, faults.restDelayMs));
+      const isAuthWrite = url.pathname === '/auth/login' || url.pathname === '/auth/signup';
+      if ((isAuthWrite && faults.rateLimitAuth) || (!isAuthWrite && faults.rateLimitRest))
+        throw new HttpError(429, 'RATE_LIMITED', 'Too many requests, slow down');
+      const f = faults.failRest; // { status, match } -> fail requests whose "METHOD /path?query" contains match
+      if (f && `${req.method} ${url.pathname}${url.search}`.includes(f.match || ''))
+        throw new HttpError(f.status, f.status >= 500 ? 'SERVER_ERROR' : 'HTTP_ERROR', 'Injected failure');
+    }
     await route(req, res, url);
   } catch (err) {
     if (err instanceof HttpError) {
@@ -306,6 +321,8 @@ io.on('connection', (socket) => {
       reply = (body) => setTimeout(() => r(body), faults.ackDelayMs);
     }
     const fail = (code, message) => reply({ ok: false, error: { code, message } });
+    if (faults.rateLimitSend) return fail('RATE_LIMITED', 'Too many messages, slow down');
+    if (faults.sendErrorCode) return fail(faults.sendErrorCode, `Injected ${faults.sendErrorCode}`);
     if (!payload || typeof payload !== 'object' || !isId(payload.chatId)) return fail('VALIDATION_ERROR', 'Invalid chatId');
     const c = chats.get(payload.chatId);
     if (!c || !c.participantIds.includes(userId)) return fail('FORBIDDEN', 'Not a participant of this chat');
