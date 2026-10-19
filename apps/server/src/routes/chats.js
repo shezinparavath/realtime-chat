@@ -16,13 +16,14 @@ const { MESSAGES_PAGE_DEFAULT, MESSAGES_PAGE_MAX } = require('../constants');
 const { pairFor } = Chat;
 
 /**
- * limit (ruling P3-10): never errors. Missing / non-numeric → 30;
- * otherwise truncated to an integer and clamped to 1..50.
+ * limit (ruling P3-10 + rulings round 2 #3): never errors.
+ * n = parseInt(limit, 10); NaN / missing / non-string → 30; else clamp 1..50.
+ * '2.5' → 2, '10abc' → 10, '0' / '-1' → 1, 'abc' → 30, '1000' → 50.
  */
 function parseLimit(raw) {
-  const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN;
-  if (!Number.isFinite(n)) return MESSAGES_PAGE_DEFAULT;
-  return Math.min(Math.max(Math.trunc(n), 1), MESSAGES_PAGE_MAX);
+  const n = typeof raw === 'string' ? parseInt(raw, 10) : NaN;
+  if (Number.isNaN(n)) return MESSAGES_PAGE_DEFAULT;
+  return Math.min(Math.max(n, 1), MESSAGES_PAGE_MAX);
 }
 
 async function loadChat(filter) {

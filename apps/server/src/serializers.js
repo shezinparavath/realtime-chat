@@ -6,7 +6,7 @@ function toUser(doc) {
   return { id: String(doc._id), username: doc.username };
 }
 
-/** Message: { id, chatId, senderId, text, createdAt (ISO) } */
+/** Message: { id, chatId, senderId, text, clientId (string | null), createdAt (ISO) } */
 function toMessage(doc, chatId) {
   if (!doc) return null;
   return {
@@ -14,6 +14,7 @@ function toMessage(doc, chatId) {
     chatId: String(chatId || doc.chatId),
     senderId: String(doc.senderId),
     text: doc.text,
+    clientId: typeof doc.clientId === 'string' ? doc.clientId : null,
     createdAt: new Date(doc.createdAt).toISOString(),
   };
 }

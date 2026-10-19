@@ -45,7 +45,8 @@ describe('GET /chats/:id/messages pagination (sorted by _id)', () => {
     assert.deepEqual(res.body.messages.map((m) => m.id), all.slice(35));
     assert.equal(res.body.hasMore, true);
     const m = res.body.messages[0];
-    assert.deepEqual(Object.keys(m).sort(), ['chatId', 'createdAt', 'id', 'senderId', 'text']);
+    assert.equal(m.clientId, null, 'legacy sends have clientId null');
+    assert.deepEqual(Object.keys(m).sort(), ['chatId', 'clientId', 'createdAt', 'id', 'senderId', 'text']);
   });
 
   it('walks back with before= until hasMore=false, no gaps/dupes', async () => {
@@ -61,14 +62,18 @@ describe('GET /chats/:id/messages pagination (sorted by _id)', () => {
   });
 
   it('limit is clamped, never 400 (ruling P3-10)', async () => {
-    const cases = { 500: 50, 51: 50, 50: 50, 0: 1, '-1': 1, '-100': 1, abc: 30, '': 30, '1.5': 1, '7': 7 };
+    // parseInt(limit, 10) then clamp (rulings round 2 #3)
+    const cases = {
+      500: 50, 999: 50, 1000: 50, 51: 50, 50: 50, 0: 1, '-1': 1, '-100': 1,
+      abc: 30, '': 30, '1.5': 1, '2.5': 2, '10abc': 10, '7': 7,
+    };
     for (const [l, expected] of Object.entries(cases)) {
       const res = await get(alice, `?limit=${encodeURIComponent(l)}`);
       assert.equal(res.status, 200, `limit=${l}`);
       assert.equal(res.body.messages.length, expected, `limit=${l}`);
     }
     const arr = await get(alice, '?limit=5&limit=6').expect(200);
-    assert.equal(arr.body.messages.length, 30);
+    assert.equal(arr.body.messages.length, 30, 'non-string (repeated) limit → default');
   });
 
   it('hasMore is exact: limit = remaining count → false (ruling P3-9)', async () => {

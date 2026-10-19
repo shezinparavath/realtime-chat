@@ -62,7 +62,7 @@ describe('socket message:send / message:new', () => {
 
     assert.equal(ack.ok, true, JSON.stringify(ack));
     const m = ack.message;
-    assert.deepEqual(Object.keys(m).sort(), ['chatId', 'createdAt', 'id', 'senderId', 'text']);
+    assert.deepEqual(Object.keys(m).sort(), ['chatId', 'clientId', 'createdAt', 'id', 'senderId', 'text']);
     assert.equal(m.chatId, chatId);
     assert.equal(m.senderId, alice.user.id);
     assert.equal(m.text, text, 'stored/returned untrimmed');
@@ -193,5 +193,81 @@ describe('socket message:send / message:new', () => {
     const unauth = await request(srv.app).get('/chats');
     assert.equal(unauth.status, 401);
     assert.equal(unauth.body.error.code, 'UNAUTHORIZED');
+  });
+
+  describe('idempotent send with clientId (rulings round 2 #1)', () => {
+    const { randomUUID } = require('node:crypto');
+
+    it('stores clientId; repeat ack returns the existing message without saving or re-emitting', async () => {
+      const a = await connect(alice);
+      const b = await connect(bob);
+      const clientId = randomUUID();
+      let bobEvents = 0;
+      b.on('message:new', (ev) => {
+        if (ev.message.clientId === clientId) bobEvents += 1;
+      });
+      const first = await emitAck(a, 'message:send', { chatId, text: 'retry me', clientId });
+      assert.equal(first.ok, true, JSON.stringify(first));
+      assert.equal(first.message.clientId, clientId);
+      const count = await Message.countDocuments();
+
+      const again = await emitAck(a, 'message:send', { chatId, text: 'retry me', clientId });
+      assert.equal(again.ok, true);
+      assert.deepEqual(again.message, first.message);
+      assert.equal(await Message.countDocuments(), count, 'not saved twice');
+      await new Promise((r) => setTimeout(r, 150));
+      assert.equal(bobEvents, 1, 'message:new emitted once only');
+
+      // lastMessage + GET /chats + history carry clientId
+      const list = await request(srv.app).get('/chats').set('Authorization', `Bearer ${bob.token}`).expect(200);
+      const c = list.body.chats.find((x) => x.id === chatId);
+      assert.equal(c.lastMessage.clientId, clientId);
+      const hist = await request(srv.app)
+        .get(`/chats/${chatId}/messages?limit=1`)
+        .set('Authorization', `Bearer ${bob.token}`)
+        .expect(200);
+      assert.equal(hist.body.messages[0].clientId, clientId);
+    });
+
+    it('same clientId from a different sender is a different message', async () => {
+      const clientId = randomUUID();
+      const a = await connect(alice);
+      const b = await connect(bob);
+      const r1 = await emitAck(a, 'message:send', { chatId, text: 'x', clientId });
+      const r2 = await emitAck(b, 'message:send', { chatId, text: 'x', clientId });
+      assert.equal(r1.ok && r2.ok, true);
+      assert.notEqual(r1.message.id, r2.message.id);
+    });
+
+    it('concurrent duplicates (E11000 race) → one stored message, all acks identical', async () => {
+      const clientId = randomUUID();
+      const socks = await Promise.all([connect(alice), connect(alice), connect(alice)]);
+      const acks = await Promise.all(
+        socks.flatMap((s) => [1, 2].map(() => emitAck(s, 'message:send', { chatId, text: 'race', clientId })))
+      );
+      for (const ack of acks) assert.equal(ack.ok, true, JSON.stringify(ack));
+      assert.equal(new Set(acks.map((x) => x.message.id)).size, 1);
+      assert.equal(await Message.countDocuments({ clientId }), 1);
+    });
+
+    it('no clientId / null → clientId null, never deduped', async () => {
+      const a = await connect(alice);
+      const r1 = await emitAck(a, 'message:send', { chatId, text: 'same' });
+      const r2 = await emitAck(a, 'message:send', { chatId, text: 'same', clientId: null });
+      assert.equal(r1.message.clientId, null);
+      assert.equal(r2.message.clientId, null);
+      assert.notEqual(r1.message.id, r2.message.id);
+    });
+
+    it('invalid clientId → VALIDATION_ERROR, nothing stored', async () => {
+      const a = await connect(alice);
+      const before = await Message.countDocuments();
+      for (const clientId of ['not-a-uuid', 42, '', `${randomUUID()}x`, 'a'.repeat(65), { a: 1 }]) {
+        const ack = await emitAck(a, 'message:send', { chatId, text: 'hi', clientId });
+        assert.equal(ack.ok, false, JSON.stringify(clientId));
+        assert.equal(ack.error.code, 'VALIDATION_ERROR');
+      }
+      assert.equal(await Message.countDocuments(), before);
+    });
   });
 });

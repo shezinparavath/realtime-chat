@@ -91,12 +91,29 @@ function validateMessageText(text) {
   return text;
 }
 
+const CLIENT_ID_MAX = 64;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Optional clientId (rulings round 2 #1): undefined/null → null; otherwise a
+ * UUID-shaped string (8-4-4-4-12 hex, any version) of at most 64 chars, else
+ * VALIDATION_ERROR field clientId. Stored as sent.
+ */
+function validateClientId(clientId) {
+  if (clientId === undefined || clientId === null) return null;
+  if (typeof clientId !== 'string' || clientId.length > CLIENT_ID_MAX || !UUID_PATTERN.test(clientId)) {
+    throw new AppError('VALIDATION_ERROR', 'clientId must be a UUID string', 'clientId');
+  }
+  return clientId;
+}
+
 function isObjectIdString(v) {
   return typeof v === 'string' && /^[a-f0-9]{24}$/i.test(v);
 }
 
 module.exports = {
   validateMessageText,
+  validateClientId,
   isObjectIdString,
   EMAIL_PATTERN,
   normalizeEmail,
