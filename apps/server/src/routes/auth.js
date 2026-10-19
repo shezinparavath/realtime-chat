@@ -64,7 +64,7 @@ function authRouter(config) {
       const user = await User.findOne(isEmail ? { email: identifier } : { username: identifier });
       const ok = await bcrypt.compare(password, user ? user.passwordHash : DUMMY_HASH);
       if (!user || !ok) {
-        throw new AppError('INVALID_CREDENTIALS', 'Wrong email/username or password');
+        throw new AppError('INVALID_CREDENTIALS', 'Invalid email/username or password');
       }
       res.status(200).json({ token: signToken(user.toPublic(), config.jwtSecret), user: user.toSelf() });
     })
