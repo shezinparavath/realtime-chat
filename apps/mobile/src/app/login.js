@@ -4,6 +4,7 @@ import { Text, View } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import { AuthScreen } from '../components/AuthScreen';
 import { useRateLimitLock } from '../hooks/useRateLimitLock';
+import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit';
 import { Banner, Button, Field, FormError, RateLimitCountdown, WakingHint, s } from '../components/ui';
 import { normalizeIdentifier, serverErrorToFormErrors, validateLogin, withRetry } from '../lib/validation';
 
@@ -79,7 +80,7 @@ export default function LoginScreen() {
         onPress={onSubmit}
         disabled={submitting || rateLock.locked}
         busy={submitting}
-        accessibilityLabel={rateLock.locked ? `Log in, disabled: ${rateLock.message}` : undefined}
+        accessibilityLabel={rateLock.locked ? `Log in, disabled: ${RATE_LIMITED_MESSAGE}` : undefined}
         testID="login-submit"
       />
       <View style={{ flexDirection: 'row', marginTop: 16, alignItems: 'center' }}>

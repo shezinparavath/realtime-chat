@@ -4,6 +4,7 @@ import { Text, View } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import { AuthScreen } from '../components/AuthScreen';
 import { useRateLimitLock } from '../hooks/useRateLimitLock';
+import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit';
 import { Button, Field, FormError, RateLimitCountdown, WakingHint, s } from '../components/ui';
 import {
   PASSWORD_MAX,
@@ -105,7 +106,7 @@ export default function SignupScreen() {
         onPress={onSubmit}
         disabled={submitting || rateLock.locked}
         busy={submitting}
-        accessibilityLabel={rateLock.locked ? `Sign up, disabled: ${rateLock.message}` : undefined}
+        accessibilityLabel={rateLock.locked ? `Sign up, disabled: ${RATE_LIMITED_MESSAGE}` : undefined}
         testID="signup-submit"
       />
       <View style={{ flexDirection: 'row', marginTop: 16, alignItems: 'center' }}>
