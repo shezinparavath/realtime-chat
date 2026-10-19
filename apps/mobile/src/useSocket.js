@@ -1,76 +1,114 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import { API_URL, API_URL_MISSING, SLOW_THRESHOLD_MS, SOCKET_PATH, SOCKET_TIMEOUT_MS } from './config';
 
 /**
- * Socket.IO connection to the same origin as REST. https:// origin => wss://.
- * status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error'
- * hello: last { message: 'welcome', socketId } payload from the server.
+ * Authenticated Socket.IO connection (LOCKED contract): io(API_URL, { auth: { token } }).
  * Mirrors apps/web/src/useSocket.js, except transports = ['websocket'] (see handoff RTC-P1-03).
+ *
+ * token = null -> no socket (status 'idle'). A new token tears down the old socket and opens a new one.
+ * A bad/missing token makes the server refuse the handshake with connect_error
+ * err.message === 'unauthorized'; we then stop and call onUnauthorized (logged out).
+ *
+ * status: 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'unauthorized' | 'error'
+ * hello: last { message: 'welcome', socketId, userId } payload from the server.
+ * socket: the live Socket instance (or null), used by the chat store.
+ * everConnected: connected at least once with this token (drives the "Reconnecting…" bar).
  */
-export function useSocket() {
-  const [status, setStatus] = useState('connecting');
+export function useSocket(token, { onUnauthorized } = {}) {
+  const [status, setStatus] = useState(token ? 'connecting' : 'idle');
   const [slow, setSlow] = useState(false);
   const [hello, setHello] = useState(null);
   const [transport, setTransport] = useState(null);
   const [lastError, setLastError] = useState(null);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const [socket, setSocket] = useState(null);
+  const [everConnected, setEverConnected] = useState(false);
   const [session, setSession] = useState(0);
+  const onUnauthorizedRef = useRef(onUnauthorized);
+  onUnauthorizedRef.current = onUnauthorized;
 
   useEffect(() => {
-    if (API_URL_MISSING) return undefined;
-    setStatus('connecting');
-    setSlow(false);
+    setHello(null);
+    setTransport(null);
     setLastError(null);
     setReconnectAttempt(0);
+    setSlow(false);
+    setEverConnected(false);
+    if (!token || API_URL_MISSING) {
+      setStatus(API_URL_MISSING && token ? 'error' : 'idle');
+      setSocket(null);
+      return undefined;
+    }
+    setStatus('connecting');
 
-    const socket = io(API_URL, {
+    const s = io(API_URL, {
       path: SOCKET_PATH,
+      auth: { token },
       // React Native has a native WebSocket; skip XHR long-polling (no sticky-session/upgrade
       // dance, no RN XHR quirks). CORS does not apply to native apps.
       transports: ['websocket'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 10000,
-      timeout: SOCKET_TIMEOUT_MS, // Render cold start can take ~50s
+      timeout: SOCKET_TIMEOUT_MS, // per-attempt limit (70s); Render cold start can take ~50s
     });
+    setSocket(s);
 
     const slowTimer = setTimeout(() => setSlow(true), SLOW_THRESHOLD_MS);
 
-    socket.on('connect', () => {
+    s.on('connect', () => {
       clearTimeout(slowTimer);
       setSlow(false);
       setStatus('connected');
+      setEverConnected(true);
       setLastError(null);
       setReconnectAttempt(0);
-      setTransport(socket.io.engine?.transport?.name ?? null);
+      setTransport(s.io.engine?.transport?.name ?? null);
     });
-    socket.on('hello', (payload) => setHello(payload));
-    socket.on('disconnect', (reason) => {
+    s.on('hello', (payload) => setHello(payload));
+    s.on('disconnect', (reason) => {
       setTransport(null);
-      // 'io client disconnect' = we closed it; anything else Socket.IO will retry.
+      console.info('[socket] disconnected:', reason); // LOCKED hardening: log the disconnect reason
+      // Server-initiated disconnects are not auto-retried by Socket.IO. Reconnect once so the
+      // handshake re-checks the token: a revoked/expired one then fails with 'unauthorized'.
+      if (reason === 'io server disconnect') {
+        setStatus('reconnecting');
+        setLastError(`disconnected: ${reason}`);
+        s.connect();
+        return;
+      }
       setStatus(reason === 'io client disconnect' ? 'disconnected' : 'reconnecting');
       setLastError(`disconnected: ${reason}`);
     });
-    socket.on('connect_error', (err) => {
-      setLastError(err?.message || String(err));
-      setStatus(socket.active ? 'reconnecting' : 'error');
+    s.on('connect_error', (err) => {
+      const message = err?.message || String(err);
+      setLastError(message);
+      if (message === 'unauthorized') {
+        clearTimeout(slowTimer);
+        setStatus('unauthorized');
+        s.disconnect();
+        onUnauthorizedRef.current?.();
+        return;
+      }
+      setStatus(s.active ? 'reconnecting' : 'error');
     });
-    socket.io.on('reconnect_attempt', (n) => {
+    s.io.on('reconnect_attempt', (n) => {
       setReconnectAttempt(n);
       setStatus('reconnecting');
     });
-    socket.io.on('reconnect_failed', () => setStatus('error'));
+    s.io.on('reconnect_failed', () => setStatus('error'));
 
     return () => {
       clearTimeout(slowTimer);
-      socket.removeAllListeners();
-      socket.io.removeAllListeners();
-      socket.disconnect();
+      s.removeAllListeners();
+      s.io.removeAllListeners();
+      s.disconnect();
+      setSocket(null);
     };
-  }, [session]);
+  }, [token, session]);
 
-  // Fresh socket (only offered in UI for 'error' / 'disconnected').
+  // Fresh socket (offered in the UI for 'error' / 'disconnected').
   const reconnect = useCallback(() => setSession((n) => n + 1), []);
-  return { status, slow, hello, transport, lastError, reconnectAttempt, reconnect };
+  return { socket, status, slow, hello, transport, lastError, reconnectAttempt, everConnected, reconnect };
 }
