@@ -13,6 +13,10 @@ const EMAIL_MAX = 254;
 const BCRYPT_COST = 10;
 const JWT_ALGORITHM = 'HS256';
 const JWT_EXPIRES_IN = '7d';
+/** Max message length, measured on the raw string (String.length). Mirror in clients. */
+const MAX_MESSAGE_LENGTH = 2000;
+const MESSAGES_PAGE_DEFAULT = 30;
+const MESSAGES_PAGE_MAX = 50;
 
 module.exports = {
   USERNAME_MIN,
@@ -24,4 +28,7 @@ module.exports = {
   BCRYPT_COST,
   JWT_ALGORITHM,
   JWT_EXPIRES_IN,
+  MAX_MESSAGE_LENGTH,
+  MESSAGES_PAGE_DEFAULT,
+  MESSAGES_PAGE_MAX,
 };

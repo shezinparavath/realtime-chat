@@ -7,12 +7,21 @@ const Chat = require('../models/Chat');
 const { AppError, asyncHandler } = require('../errors');
 const { requireAuth } = require('../middleware/auth');
 const { requireDb } = require('../middleware/requireDb');
-const { toChat } = require('../serializers');
+const Message = require('../models/Message');
+const { toChat, toMessage } = require('../serializers');
+const { isObjectIdString } = require('../validation');
+const { getChatForParticipant } = require('../services/messages');
+const { MESSAGES_PAGE_DEFAULT, MESSAGES_PAGE_MAX } = require('../constants');
 
 const { pairFor } = Chat;
 
-function isObjectIdString(v) {
-  return typeof v === 'string' && /^[a-f0-9]{24}$/i.test(v);
+/** limit: default 30; integer >= 1; values above 50 are clamped to 50. */
+function parseLimit(raw) {
+  if (raw === undefined || raw === '') return MESSAGES_PAGE_DEFAULT;
+  if (typeof raw !== 'string' || !/^\d+$/.test(raw) || Number(raw) < 1) {
+    throw new AppError('VALIDATION_ERROR', 'limit must be a positive integer', 'limit');
+  }
+  return Math.min(Number(raw), MESSAGES_PAGE_MAX);
 }
 
 async function loadChat(filter) {
@@ -22,6 +31,53 @@ async function loadChat(filter) {
 function chatsRouter(config) {
   const router = express.Router();
   router.use(requireAuth(config), requireDb(config));
+
+  // GET /chats — caller's chats, most recent activity first.
+  router.get(
+    '/',
+    asyncHandler(async (req, res) => {
+      const chats = await Chat.find({ participants: req.user.id })
+        .sort({ updatedAt: -1, _id: -1 })
+        .populate('participants', 'username')
+        .lean();
+      res.status(200).json({ chats: chats.map(toChat) });
+    })
+  );
+
+  // GET /chats/:id/messages?before=<messageId>&limit=30
+  // Returns the page of messages strictly older than `before` (or the newest
+  // page), oldest→newest, plus hasMore = older messages exist.
+  router.get(
+    '/:id/messages',
+    asyncHandler(async (req, res) => {
+      const chat = await getChatForParticipant(req.params.id, req.user.id, 'id');
+      const limit = parseLimit(req.query.limit);
+
+      const filter = { chatId: chat._id };
+      const { before } = req.query;
+      if (before !== undefined && before !== '') {
+        if (!isObjectIdString(before)) {
+          throw new AppError('VALIDATION_ERROR', 'before must be a message id', 'before');
+        }
+        const cursor = await Message.findOne({ _id: before, chatId: chat._id }, { createdAt: 1 }).lean();
+        if (!cursor) {
+          throw new AppError('VALIDATION_ERROR', 'before is not a message in this chat', 'before');
+        }
+        filter.$or = [
+          { createdAt: { $lt: cursor.createdAt } },
+          { createdAt: cursor.createdAt, _id: { $lt: cursor._id } },
+        ];
+      }
+
+      const docs = await Message.find(filter)
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(limit + 1)
+        .lean();
+      const hasMore = docs.length > limit;
+      const page = docs.slice(0, limit).reverse();
+      res.status(200).json({ messages: page.map((m) => toMessage(m, chat._id)), hasMore });
+    })
+  );
 
   // POST /chats { userId } — open or create the 1:1 chat with userId.
   router.post(
@@ -70,4 +126,4 @@ function chatsRouter(config) {
   return router;
 }
 
-module.exports = { chatsRouter, isObjectIdString, loadChat };
+module.exports = { chatsRouter, loadChat, parseLimit };

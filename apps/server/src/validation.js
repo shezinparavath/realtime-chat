@@ -8,6 +8,7 @@ const {
   PASSWORD_MIN,
   PASSWORD_MAX,
   EMAIL_MAX,
+  MAX_MESSAGE_LENGTH,
 } = require('./constants');
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -72,7 +73,31 @@ function validateLogin(body) {
   return { identifier, isEmail, password: b.password };
 }
 
+/**
+ * Message text rules: must be a string; text.trim() non-empty (MESSAGE_EMPTY);
+ * text.length <= MAX_MESSAGE_LENGTH on the RAW string (MESSAGE_TOO_LONG).
+ * The raw text is what gets stored.
+ */
+function validateMessageText(text) {
+  if (typeof text !== 'string') {
+    throw new AppError('VALIDATION_ERROR', 'text must be a string', 'text');
+  }
+  if (text.trim().length === 0) {
+    throw new AppError('MESSAGE_EMPTY', 'Message cannot be empty');
+  }
+  if (text.length > MAX_MESSAGE_LENGTH) {
+    throw new AppError('MESSAGE_TOO_LONG', `Message cannot exceed ${MAX_MESSAGE_LENGTH} characters`);
+  }
+  return text;
+}
+
+function isObjectIdString(v) {
+  return typeof v === 'string' && /^[a-f0-9]{24}$/i.test(v);
+}
+
 module.exports = {
+  validateMessageText,
+  isObjectIdString,
   EMAIL_PATTERN,
   normalizeEmail,
   normalizeUsername,
