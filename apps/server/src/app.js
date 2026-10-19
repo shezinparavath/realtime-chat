@@ -10,7 +10,7 @@ const { usersRouter } = require('./routes/users');
 const { chatsRouter } = require('./routes/chats');
 const { attachSocketHandlers } = require('./socket');
 const { notFoundHandler, errorHandler } = require('./errors');
-const { assertProductionConfig } = require('./config');
+const { assertProductionConfig, assertValidConfig } = require('./config');
 const { SOCKET_PING_INTERVAL_MS, SOCKET_PING_TIMEOUT_MS } = require('./constants');
 
 /**
@@ -19,11 +19,12 @@ const { SOCKET_PING_INTERVAL_MS, SOCKET_PING_TIMEOUT_MS } = require('./constants
  */
 function createApp(config) {
   assertProductionConfig(config); // throws: NODE_ENV=production without CLIENT_ORIGINS
+  assertValidConfig(config); // throws: malformed TRUST_PROXY_HOPS / CLIENT_IP_HEADER
 
   const app = express();
   app.disable('x-powered-by'); // Jain ruling (hardening)
   // Render terminates TLS in one proxy hop → req.ip = real client IP (rate limits).
-  app.set('trust proxy', 1);
+  app.set('trust proxy', config.trustProxyHops); // DEF-001: TRUST_PROXY_HOPS, default 1
   const startedAt = Date.now();
 
   const corsOptions = {

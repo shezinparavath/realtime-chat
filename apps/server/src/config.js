@@ -19,6 +19,26 @@ function parseOrigins(raw) {
     .filter(Boolean);
 }
 
+const HEADER_NAME_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
+
+/**
+ * DEF-001: client-IP source for the auth rate limiter, from env.
+ * TRUST_PROXY_HOPS → app.set('trust proxy', n) (default 1 = today's behaviour).
+ * CLIENT_IP_HEADER → optional header (e.g. CF-Connecting-IP) used as the key.
+ * Invalid values are kept as raw strings and rejected by assertValidConfig().
+ */
+function parseTrustProxyHops(raw) {
+  if (raw === undefined || String(raw).trim() === '') return 1;
+  const s = String(raw).trim();
+  return /^\d+$/.test(s) && Number(s) <= 10 ? Number(s) : { invalid: s };
+}
+
+function parseClientIpHeader(raw) {
+  const s = (raw || '').trim();
+  if (!s) return '';
+  return HEADER_NAME_PATTERN.test(s) ? s.toLowerCase() : { invalid: s };
+}
+
 function loadConfig(env = process.env) {
   const originsRaw = env.CLIENT_ORIGINS || env.CORS_ORIGIN || '';
   const clientOrigins = parseOrigins(originsRaw);
@@ -29,6 +49,9 @@ function loadConfig(env = process.env) {
     jwtSecret: env.JWT_SECRET || '',
     clientOrigins,
     nodeEnv: env.NODE_ENV || 'development',
+    trustProxyHops: parseTrustProxyHops(env.TRUST_PROXY_HOPS),
+    clientIpHeader: parseClientIpHeader(env.CLIENT_IP_HEADER),
+    rateLimitDebug: env.RATE_LIMIT_DEBUG === '1',
     // Production defaults from the locked contract. Overridable via the config
     // object passed to createApp() (tests), not via env.
     rateLimits: {
@@ -53,4 +76,14 @@ function assertProductionConfig(config) {
   }
 }
 
-module.exports = { loadConfig, parseOrigins, assertProductionConfig };
+/** Refuse to start on a malformed TRUST_PROXY_HOPS / CLIENT_IP_HEADER (any NODE_ENV). */
+function assertValidConfig(config) {
+  if (typeof config.trustProxyHops !== 'number') {
+    throw new Error('[config] TRUST_PROXY_HOPS must be an integer 0-10 (number of trusted proxy hops) — refusing to start.');
+  }
+  if (typeof config.clientIpHeader !== 'string') {
+    throw new Error('[config] CLIENT_IP_HEADER must be a header name like CF-Connecting-IP — refusing to start.');
+  }
+}
+
+module.exports = { loadConfig, parseOrigins, assertProductionConfig, assertValidConfig };

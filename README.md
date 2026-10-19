@@ -58,6 +58,9 @@ npm start            # http://localhost:4000, check with: curl http://localhost:
 | `JWT_SECRET` | Secret used to sign login tokens (required for auth and sockets) |
 | `CLIENT_ORIGINS` | Comma-separated allowed browser origins, e.g. the local web dev URL (`CORS_ORIGIN` is accepted as an alias) |
 | `NODE_ENV` | `development` / `production` |
+| `TRUST_PROXY_HOPS` | Optional (default 1). Number of proxy hops in front of the server, used to find the real client IP for auth rate limits |
+| `CLIENT_IP_HEADER` | Optional. Header with the client IP set by the edge proxy (e.g. `CF-Connecting-IP`); only safe if that proxy overwrites it |
+| `RATE_LIMIT_DEBUG` | Optional. `1` logs the forwarded-chain length per auth request (no IPs) |
 
 Optional: seed two test accounts with a sample chat. The command is idempotent, so it is safe to re-run.
 

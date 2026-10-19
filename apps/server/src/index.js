@@ -2,7 +2,7 @@
 
 require('dotenv').config();
 
-const { loadConfig, assertProductionConfig } = require('./config');
+const { loadConfig, assertProductionConfig, assertValidConfig } = require('./config');
 const { connectMongo, disconnectMongo } = require('./db');
 const { createApp } = require('./app');
 
@@ -17,6 +17,10 @@ async function main() {
 
   // Fails fast (before connecting to Mongo) if NODE_ENV=production and no CLIENT_ORIGINS.
   assertProductionConfig(config);
+  assertValidConfig(config);
+  console.log(
+    `[config] client IP: trust proxy hops=${config.trustProxyHops}, header=${config.clientIpHeader || '(none, req.ip)'}`
+  );
 
   await connectMongo(config.mongodbUri);
 

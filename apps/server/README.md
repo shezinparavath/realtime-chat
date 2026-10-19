@@ -18,13 +18,16 @@ Node.js + Express + Socket.IO backend for realtime-chat. CommonJS, Node >= 18.
 | `MONGODB_URI` | for auth/data routes | Without it `/health` works and auth/data routes answer **500 `SERVER_ERROR`** |
 | `JWT_SECRET` | for auth/data routes + sockets | HS256 signing secret. Without it auth routes answer 500 and every socket is refused |
 | `CLIENT_ORIGINS` / `CORS_ORIGIN` | **required when `NODE_ENV=production`** (server refuses to start otherwise); recommended elsewhere | Comma-separated allowed origins |
+| `TRUST_PROXY_HOPS` | no (default `1`) | Integer 0–10 passed to Express `trust proxy`: how many proxy hops in front of the app append to `X-Forwarded-For`. `req.ip` = the entry that many hops from the right, so client-supplied (forged) leftmost entries are ignored. Must equal the **real** hop count — too high lets a client choose its own key, too low puts everyone behind the outermost proxy in one counter. Malformed → refuses to start |
+| `CLIENT_IP_HEADER` | no (default unset) | Header holding the client IP set by the edge proxy, e.g. `CF-Connecting-IP` or `True-Client-IP`. When set, the auth rate limiter keys on it (first value, must parse as an IP) and falls back to `req.ip` when it is missing/invalid; XFF is then irrelevant to the key. **Only safe if the edge proxy strips/overwrites that header on every request** (Cloudflare does for these two) — otherwise clients can forge it. Malformed name → refuses to start |
+| `RATE_LIMIT_DEBUG` | no (`1` to enable) | Logs one `[ratelimit-debug]` line per auth request with the XFF entry count, whether `CLIENT_IP_HEADER` was present and which key source was used. **Never logs IPs.** For verifying the proxy topology; turn off afterwards |
 | `MONGOMS_DOWNLOAD_DIR` | tests only, optional | Where the test mongod binary is cached (first `npm test` downloads ~180 MB) |
 
 ## API (locked contract — see project `context/interface-contracts.md`)
 
 All errors: `{ "error": { "code", "message", "field?" } }`.
 
-Rate limits (hardening): `/auth/login` and `/auth/signup` each allow 20 requests / 15 min per IP (`trust proxy` 1). Over the limit → **429** `{ error: { code: 'RATE_LIMITED', message } }` with `RateLimit*` headers and `Retry-After` = whole seconds until the window resets. Socket `message:send` allows 10 / 10 s per socket; over → ack `{ ok:false, error:{ code:'RATE_LIMITED', message, retryAfterMs } }` (integer ms until that socket can send again). `X-Powered-By` is disabled. Socket.IO keepalive: `pingInterval` 20000, `pingTimeout` 25000.
+Rate limits (hardening): `/auth/login` and `/auth/signup` have **separate** budgets of 20 requests / 15 min per client IP (DEF-001). The client IP is `CLIENT_IP_HEADER` if set and valid, otherwise `req.ip` under `trust proxy` = `TRUST_PROXY_HOPS` (default 1); a forged `X-Forwarded-For` cannot change the key under either mode. Counters are in memory (per instance, reset on restart). Over the limit → **429** `{ error: { code: 'RATE_LIMITED', message } }` with `RateLimit*` headers and `Retry-After` = whole seconds until the window resets. Socket `message:send` allows 10 / 10 s per socket; over → ack `{ ok:false, error:{ code:'RATE_LIMITED', message, retryAfterMs } }` (integer ms until that socket can send again). `X-Powered-By` is disabled. Socket.IO keepalive: `pingInterval` 20000, `pingTimeout` 25000.
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
@@ -49,6 +52,7 @@ Socket.IO: `io(API_URL, { auth: { token } })`; bad/missing token → `connect_er
 - **Build:** `npm install`
 - **Start:** `npm start`
 - Env: `PORT` (injected), `MONGODB_URI`, `JWT_SECRET`, `CLIENT_ORIGINS`
+- Client IP behind Render (+ Cloudflare): set `TRUST_PROXY_HOPS` to the verified hop count **or** `CLIENT_IP_HEADER=CF-Connecting-IP` (see Env). Use `RATE_LIMIT_DEBUG=1` briefly to check the XFF chain length.
 
 ## Local
 
