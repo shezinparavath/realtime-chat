@@ -29,10 +29,9 @@ function usersRouter(config) {
       const q = (raw || '').trim().toLowerCase();
       if (!q) return res.status(200).json({ users: [] });
 
-      // usernames are stored lowercase, so an anchored case-sensitive regex on
-      // the lowercased query is a case-insensitive prefix match that can use the index.
+      // Ruling P2-5: '^' + escaped(q), case-insensitive, on the stored lowercase username.
       const users = await User.find(
-        { username: { $regex: `^${escapeRegex(q)}` }, _id: { $ne: req.user.id } },
+        { username: { $regex: `^${escapeRegex(q)}`, $options: 'i' }, _id: { $ne: req.user.id } },
         { username: 1 }
       )
         .sort({ username: 1 })

@@ -80,9 +80,20 @@ describe('GET /users/search + POST /chats', () => {
     assert.deepEqual(res.body.users, []);
   });
 
-  it('limits to 20', async () => {
+  it('limits to 20, sorted by username ascending (ruling P2-6)', async () => {
     const res = await request(app).get('/users/search?q=user').set(auth(alice)).expect(200);
     assert.equal(res.body.users.length, 20);
+    const names = res.body.users.map((u) => u.username);
+    assert.deepEqual(names, [...names].sort());
+    assert.equal(names[0], 'user00');
+    assert.equal(names[19], 'user19');
+  });
+
+  it('regex metacharacters are literal (ruling P2-5)', async () => {
+    for (const q of ['^', '$', '[a-z]', 'b+', '\\', '?']) {
+      const res = await request(app).get('/users/search').query({ q }).set(auth(alice)).expect(200);
+      assert.deepEqual(res.body.users, [], `q=${q}`);
+    }
   });
 
   it('repeated q param → 400 VALIDATION_ERROR', async () => {

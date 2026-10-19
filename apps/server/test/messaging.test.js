@@ -119,16 +119,52 @@ describe('socket message:send / message:new', () => {
     assert.equal(ack.error.code, 'FORBIDDEN');
   });
 
-  it('unknown chat → NOT_FOUND; bad chatId / non-string text → VALIDATION_ERROR', async () => {
+  it('well-formed unknown chat → FORBIDDEN; malformed chatId → VALIDATION_ERROR (ruling P3-2)', async () => {
     const s = await connect(alice);
     let ack = await emitAck(s, 'message:send', { chatId: '0123456789abcdef01234567', text: 'hi' });
-    assert.equal(ack.error.code, 'NOT_FOUND');
+    assert.equal(ack.error.code, 'FORBIDDEN');
     ack = await emitAck(s, 'message:send', { chatId: 'nope', text: 'hi' });
-    assert.equal(ack.error.code, 'VALIDATION_ERROR');
-    ack = await emitAck(s, 'message:send', { chatId, text: 42 });
     assert.equal(ack.error.code, 'VALIDATION_ERROR');
     ack = await emitAck(s, 'message:send', null);
     assert.equal(ack.error.code, 'VALIDATION_ERROR');
+  });
+
+  it('text missing / null / non-string → VALIDATION_ERROR, nothing stored (ruling P3-3)', async () => {
+    const s = await connect(alice);
+    const before = await Message.countDocuments();
+    for (const payload of [{ chatId }, { chatId, text: null }, { chatId, text: 42 }, { chatId, text: ['a'] }, { chatId, text: { a: 1 } }]) {
+      const ack = await emitAck(s, 'message:send', payload);
+      assert.equal(ack.ok, false);
+      assert.equal(ack.error.code, 'VALIDATION_ERROR', JSON.stringify(payload));
+    }
+    assert.equal(await Message.countDocuments(), before);
+    assert.equal(s.connected, true);
+  });
+
+  it('no ack callback: valid send is saved + broadcast, invalid is dropped, no crash (ruling P3-4)', async () => {
+    const a = await connect(alice);
+    const b = await connect(bob);
+    const got = once(b, 'message:new');
+    a.emit('message:send', { chatId, text: 'no ack here' });
+    const ev = await got;
+    assert.equal(ev.message.text, 'no ack here');
+    assert.ok(await Message.exists({ _id: ev.message.id }));
+    a.emit('message:send', { chatId, text: '   ' });
+    a.emit('message:send', 'garbage');
+    a.emit('message:send');
+    const pong = await emitAck(a, 'ping', 1); // server still alive and responsive
+    assert.equal(pong.pong, true);
+  });
+
+  it('length is UTF-16 code units: 1000 emoji (2000 units) accepted, 1000 emoji + 1 rejected (ruling P3-5)', async () => {
+    const s = await connect(alice);
+    const emoji = '😀'.repeat(1000);
+    assert.equal(emoji.length, 2000);
+    let ack = await emitAck(s, 'message:send', { chatId, text: emoji });
+    assert.equal(ack.ok, true, JSON.stringify(ack.error));
+    assert.equal(ack.message.text, emoji);
+    ack = await emitAck(s, 'message:send', { chatId, text: `${emoji}x` });
+    assert.equal(ack.error.code, 'MESSAGE_TOO_LONG');
   });
 
   it('GET /chats sorted by updatedAt desc with lastMessage; empty list for new user', async () => {

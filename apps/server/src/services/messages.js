@@ -13,14 +13,19 @@ function dbReady() {
 
 /**
  * Load a chat and assert `userId` is a participant.
- * Malformed id → VALIDATION_ERROR(field), missing → NOT_FOUND, not a participant → FORBIDDEN.
+ * Malformed id → VALIDATION_ERROR(field); not a participant → FORBIDDEN.
+ * Missing chat → NOT_FOUND (REST) or FORBIDDEN when { missingAs: 'FORBIDDEN' } (socket, ruling P3-2).
  */
-async function getChatForParticipant(chatId, userId, field = 'chatId') {
+async function getChatForParticipant(chatId, userId, field = 'chatId', { missingAs = 'NOT_FOUND' } = {}) {
   if (!isObjectIdString(chatId)) {
     throw new AppError('VALIDATION_ERROR', 'Invalid chat id', field);
   }
   const chat = await Chat.findById(chatId).lean();
-  if (!chat) throw new AppError('NOT_FOUND', 'Chat not found');
+  if (!chat) {
+    throw missingAs === 'FORBIDDEN'
+      ? new AppError('FORBIDDEN', 'You are not a participant of this chat')
+      : new AppError('NOT_FOUND', 'Chat not found');
+  }
   if (!chat.participants.some((p) => String(p) === String(userId))) {
     throw new AppError('FORBIDDEN', 'You are not a participant of this chat');
   }
@@ -29,13 +34,14 @@ async function getChatForParticipant(chatId, userId, field = 'chatId') {
 
 /**
  * Validate + persist a message and bump the chat's lastMessage/updatedAt.
- * Order of checks (locked): participant (FORBIDDEN) → MESSAGE_EMPTY → MESSAGE_TOO_LONG.
+ * Order of checks (locked): malformed chatId (VALIDATION_ERROR) → missing chat / not a participant
+ * (FORBIDDEN) → non-string text (VALIDATION_ERROR) → MESSAGE_EMPTY → MESSAGE_TOO_LONG.
  * Returns { message: Message, chat: Chat, participantIds: string[] }.
  */
 async function sendMessage({ userId, chatId, text }) {
   if (!dbReady()) throw new AppError('SERVER_ERROR', 'Database unavailable');
 
-  const chat = await getChatForParticipant(chatId, userId);
+  const chat = await getChatForParticipant(chatId, userId, 'chatId', { missingAs: 'FORBIDDEN' });
   validateMessageText(text);
 
   const createdAt = new Date();
