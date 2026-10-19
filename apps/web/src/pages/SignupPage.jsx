@@ -13,6 +13,7 @@ import {
   withRetry,
 } from '../lib/validation.js';
 import { useRateLimitLock } from '../hooks/useRateLimitLock.js';
+import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit.js';
 import { navigate } from '../router.js';
 
 export function SignupPage() {
@@ -97,7 +98,7 @@ export function SignupPage() {
           className="primary"
           disabled={submitting || rateLock.locked}
           aria-busy={submitting || undefined}
-          title={rateLock.locked ? rateLock.message : undefined}
+          title={rateLock.locked ? RATE_LIMITED_MESSAGE : undefined}
           data-testid="signup-submit">
           {submitting ? (slow ? 'Waking server…' : 'Creating account…') : 'Sign up'}
         </button>

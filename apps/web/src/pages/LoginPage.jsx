@@ -3,6 +3,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { Field, FormError, RateLimitCountdown, WakingHint } from '../components/Field.jsx';
 import { normalizeIdentifier, serverErrorToFormErrors, validateLogin, withRetry } from '../lib/validation.js';
 import { useRateLimitLock } from '../hooks/useRateLimitLock.js';
+import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit.js';
 import { navigate } from '../router.js';
 
 export function LoginPage() {
@@ -80,7 +81,7 @@ export function LoginPage() {
           className="primary"
           disabled={submitting || rateLock.locked}
           aria-busy={submitting || undefined}
-          title={rateLock.locked ? rateLock.message : undefined}
+          title={rateLock.locked ? RATE_LIMITED_MESSAGE : undefined}
           data-testid="login-submit">
           {submitting ? (slow ? 'Waking server…' : 'Logging in…') : 'Log in'}
         </button>
