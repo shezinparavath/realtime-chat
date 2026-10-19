@@ -142,7 +142,7 @@ async function runSeed(env, log = console.log) {
   log(`[seed] sample messages: ${inserted} inserted, ${SAMPLE_MESSAGES.length - inserted} already present`);
 
   // Recompute lastMessage/updatedAt from the newest message in the chat.
-  const newest = await Message.findOne({ chatId: chat._id }).sort({ createdAt: -1, _id: -1 }).lean();
+  const newest = await Message.findOne({ chatId: chat._id }).sort({ _id: -1 }).lean(); // _id order (ruling P3-11)
   if (newest) {
     await Chat.updateOne(
       { _id: chat._id },
