@@ -5,20 +5,45 @@
   line-height: 1.5;
 }
 body { margin: 0; }
-main { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
-h1 { font-size: 1.4rem; }
+main { max-width: 640px; margin: 0 auto; padding: 16px 16px 72px; }
 h2 { font-size: 1.1rem; display: flex; align-items: center; gap: 8px; margin-top: 0; }
+a { color: #0969da; }
+.app-header { display: flex; justify-content: space-between; align-items: center; max-width: 640px; margin: 0 auto; padding: 16px 16px 0; }
+.brand { font-weight: 700; font-size: 1.2rem; color: inherit; text-decoration: none; }
+.session { display: flex; align-items: center; gap: 12px; }
 .card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 16px; margin: 16px 0; }
-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0 0 12px; }
+.auth-card { max-width: 400px; margin: 32px auto; }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+label { font-weight: 600; font-size: 0.9rem; }
+input { font: inherit; padding: 8px 10px; border: 1px solid #d0d7de; border-radius: 6px; width: 100%; box-sizing: border-box; }
+input[aria-invalid='true'] { border-color: #cf222e; }
+input:disabled { background: #f6f8fa; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 8px 0 0; }
 dt { font-weight: 600; }
 dd { margin: 0; word-break: break-all; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
 .muted { color: #656d76; }
 .hint { color: #9a6700; }
 .error { color: #cf222e; }
-button { padding: 6px 14px; border-radius: 6px; border: 1px solid #d0d7de; background: #f6f8fa; cursor: pointer; }
-button:hover { background: #eef1f4; }
-.badge { font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #eaeef2; color: #424a53; }
-.badge-ok, .badge-connected, .badge-db-connected { background: #dafbe1; color: #1a7f37; }
-.badge-loading, .badge-connecting, .badge-reconnecting, .badge-db-not_configured { background: #fff8c5; color: #9a6700; }
-.badge-error, .badge-disconnected, .badge-db-disconnected { background: #ffebe9; color: #cf222e; }
+.form-error { margin: 0 0 12px; }
+button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #d0d7de; background: #f6f8fa; cursor: pointer; }
+button:hover:not(:disabled) { background: #eef1f4; }
+button:disabled { opacity: 0.6; cursor: default; }
+button.primary { background: #1f883d; border-color: #1a7f37; color: #fff; width: 100%; padding: 8px 14px; }
+button.primary:hover:not(:disabled) { background: #1a7f37; }
+button.link { border: none; background: none; padding: 0; color: inherit; font-size: inherit; }
+.search-results { margin-top: 12px; }
+.user-list { list-style: none; margin: 0; padding: 0; }
+.user-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid #eaeef2; }
+.user-list li:first-child { border-top: none; }
+.username { font-weight: 600; }
+.chat-placeholder { border: 1px dashed #d0d7de; border-radius: 6px; padding: 24px; text-align: center; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.status-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #d0d7de; padding: 6px 16px; font-size: 0.8rem; color: #656d76; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.status-details { flex-basis: 100%; font-size: 0.8rem; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #8c959f; vertical-align: middle; }
+.dot-ok, .dot-connected { background: #1a7f37; }
+.dot-loading, .dot-connecting, .dot-reconnecting { background: #bf8700; }
+.dot-error, .dot-unauthorized, .dot-disconnected { background: #cf222e; }
+.banner { background: #fff8c5; border: 1px solid #d4a72c; color: #7d4e00; border-radius: 6px; padding: 8px 12px; margin: 0 0 12px; }
+.reconnecting-bar { position: sticky; top: 0; z-index: 10; background: #fff8c5; color: #7d4e00; border-bottom: 1px solid #d4a72c; font-size: 0.8rem; text-align: center; padding: 2px 8px; }
