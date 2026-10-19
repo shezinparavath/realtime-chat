@@ -9,7 +9,8 @@ const { RATE_LIMITED, RATE_LIMITED_MESSAGE } = require('../constants');
  * Per-IP limiter for one auth route (each route gets its own instance/store).
  * Over the limit → 429 { error: { code: 'RATE_LIMITED', message } } plus
  * standard RateLimit-* headers (draft-7) and Retry-After.
- * Key = clientKey(req, clientIpHeader): see below (DEF-001).
+ * Key = clientKey(req, clientIpHeader): see below (DEF-001). In production the
+ * defaults are CF-Connecting-IP with fallback to req.ip under trust proxy 3.
  */
 function authLimiter({ windowMs, max, clientIpHeader = '' }) {
   return rateLimit({
@@ -33,8 +34,9 @@ function authLimiter({ windowMs, max, clientIpHeader = '' }) {
  * - Header mode (CLIENT_IP_HEADER set): the header's value if it is a valid IP
  *   (first comma-separated entry, trimmed); X-Forwarded-For is ignored. Falls
  *   back to req.ip when the header is missing/invalid. Only safe when the edge
- *   proxy overwrites that header (Cloudflare does for CF-Connecting-IP /
- *   True-Client-IP).
+ *   proxy rejects/overwrites client-supplied values: on Render, Cloudflare
+ *   answers 403 (error 1000) to a client-sent CF-Connecting-IP. True-Client-IP,
+ *   X-Real-IP etc. are forgeable there and refused by config.js.
  * - Default: req.ip, which Express derives from X-Forwarded-For using
  *   app.set('trust proxy', TRUST_PROXY_HOPS): it skips exactly that many
  *   trusted hops from the right, so client-supplied (leftmost) entries are

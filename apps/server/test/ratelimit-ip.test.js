@@ -209,3 +209,91 @@ describe('RATE_LIMIT_DEBUG=1 logs only counts, never IPs', () => {
     assert.ok(!lines.some((l) => l.includes('[ratelimit-debug]')));
   });
 });
+
+describe('production defaults (Varun Render findings) and explicit-override precedence', () => {
+  const PROD = { NODE_ENV: 'production', CLIENT_ORIGINS: 'https://web.example' };
+
+  it('NODE_ENV=production + vars unset → hops 3, CF-Connecting-IP', () => {
+    const c = loadConfig(PROD);
+    assert.equal(c.trustProxyHops, 3);
+    assert.equal(c.clientIpHeader, 'cf-connecting-ip');
+    assert.deepEqual(c.clientIpSource, { trustProxyHops: 'production default', clientIpHeader: 'production default' });
+    // empty values count as unset
+    const e = loadConfig({ ...PROD, TRUST_PROXY_HOPS: '', CLIENT_IP_HEADER: '  ' });
+    assert.equal(e.trustProxyHops, 3);
+    assert.equal(e.clientIpHeader, 'cf-connecting-ip');
+  });
+
+  it('dev / test / unset NODE_ENV → hops 1, no header', () => {
+    for (const NODE_ENV of [undefined, 'development', 'test', 'staging']) {
+      const c = loadConfig({ NODE_ENV });
+      assert.equal(c.trustProxyHops, 1, String(NODE_ENV));
+      assert.equal(c.clientIpHeader, '', String(NODE_ENV));
+      assert.equal(c.clientIpSource.trustProxyHops, 'dev default');
+    }
+  });
+
+  it('explicit env values always win', () => {
+    let c = loadConfig({ ...PROD, TRUST_PROXY_HOPS: '2' });
+    assert.equal(c.trustProxyHops, 2);
+    assert.equal(c.clientIpHeader, 'cf-connecting-ip');
+    assert.equal(c.clientIpSource.trustProxyHops, 'env');
+    c = loadConfig({ ...PROD, TRUST_PROXY_HOPS: '0', CLIENT_IP_HEADER: 'none' });
+    assert.equal(c.trustProxyHops, 0);
+    assert.equal(c.clientIpHeader, '', 'CLIENT_IP_HEADER=none disables the header in production');
+    c = loadConfig({ NODE_ENV: 'development', TRUST_PROXY_HOPS: '3', CLIENT_IP_HEADER: 'CF-Connecting-IP' });
+    assert.equal(c.trustProxyHops, 3);
+    assert.equal(c.clientIpHeader, 'cf-connecting-ip');
+    assert.equal(loadConfig({ CLIENT_IP_HEADER: 'NONE' }).clientIpHeader, '');
+  });
+
+  it('True-Client-IP / X-Real-IP (and other forgeable headers) refuse to start, any case, any NODE_ENV', () => {
+    for (const h of ['True-Client-IP', 'x-real-ip', 'X-REAL-IP', 'CF-Connecting-IPv6', 'X-Forwarded-For', 'Forwarded']) {
+      for (const env of [{ CLIENT_IP_HEADER: h }, { ...PROD, CLIENT_IP_HEADER: h }]) {
+        assert.throws(() => assertValidConfig(loadConfig(env)), /client-forgeable.*refusing to start/, h);
+      }
+    }
+  });
+
+  it('production app gets trust proxy 3', async () => {
+    const srv = await startServer({ db: false, env: { NODE_ENV: 'production' } });
+    assert.equal(srv.app.get('trust proxy'), 3);
+    assert.equal(srv.config.clientIpHeader, 'cf-connecting-ip');
+    await srv.stop();
+  });
+});
+
+describe('Render-shaped XFF "forged, client, cf, lb" with trust proxy 3', () => {
+  // App sees XFF "<forged>, <client>, <cloudflare>, <render LB>" plus a Render-internal socket peer (here 127.0.0.1).
+  const render = (forged, client) => ({
+    'X-Forwarded-For': `${forged ? `${forged}, ` : ''}${client}, 172.70.1.1, 10.201.0.5`,
+  });
+
+  it('hops 3, no header: key is the real client, never the forged entry', async () => {
+    const srv = await startServer({ db: false, rateLimits: LIMITS, env: { TRUST_PROXY_HOPS: '3', CLIENT_IP_HEADER: 'none' } });
+    try {
+      // Forged entry rotates, real client fixed → one counter. (req.ip itself is asserted in ipdebug.test.js.)
+      const codes = await statuses((i) => login(srv.app, render(`198.18.0.${i}`, '203.0.113.31')), MAX + 2);
+      limitedAfter(codes, 500);
+      assert.equal((await login(srv.app, render('203.0.113.31', '203.0.113.32'))).status, 500, 'forging the limited IP does not borrow its counter');
+    } finally {
+      await srv.stop();
+    }
+  });
+
+  it('production defaults: CF-Connecting-IP keys it; without the header the chain falls back to the client', async () => {
+    const srv = await startServer({ db: false, rateLimits: LIMITS, env: { NODE_ENV: 'production' } });
+    try {
+      const codes = await statuses(
+        (i) => login(srv.app, { ...render(`198.18.1.${i}`, '203.0.113.41'), 'CF-Connecting-IP': '203.0.113.41' }),
+        MAX + 2
+      );
+      limitedAfter(codes, 500);
+      // header missing → req.ip under trust proxy 3 = the client again, same budget would apply to that IP
+      const fb = await statuses((i) => login(srv.app, render(`198.18.2.${i}`, '203.0.113.42')), MAX + 1);
+      limitedAfter(fb, 500);
+    } finally {
+      await srv.stop();
+    }
+  });
+});
