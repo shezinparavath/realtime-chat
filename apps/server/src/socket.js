@@ -48,7 +48,7 @@ function attachSocketHandlers(io, config) {
       const gate = sendLimiter.check();
       if (!gate.allowed) {
         const nack = ackError(RATE_LIMITED, RATE_LIMITED_MESSAGE);
-        nack.error.retryAfterMs = gate.retryAfterMs; // Jain ruling: integer ms until this socket's window frees up
+        nack.error.retryAfterMs = gate.retryAfterMs; // spec: integer ms until this socket's window frees up
         reply(nack);
         return;
       }

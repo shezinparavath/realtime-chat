@@ -21,7 +21,7 @@ function createApp(config) {
   assertProductionConfig(config); // throws: NODE_ENV=production without CLIENT_ORIGINS
 
   const app = express();
-  app.disable('x-powered-by'); // Jain ruling (hardening)
+  app.disable('x-powered-by'); // spec: hardening (interface-contracts, nice-to-have + hardening)
   // Render terminates TLS in one proxy hop → req.ip = real client IP (rate limits).
   app.set('trust proxy', 1);
   const startedAt = Date.now();
