@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react';
+
 export function Field({ id, label, error, hint, ...inputProps }) {
   const describedBy = [error && `${id}-error`, hint && `${id}-hint`].filter(Boolean).join(' ') || undefined;
   return (
@@ -57,5 +59,49 @@ export function ErrorBlock({ message, onRetry, retryLabel = 'Retry', testId }) {
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * Rulings: stale data UX #1 — a background refetch failed but cached data is still shown.
+ * Small, non-blocking (role=status, not alert) notice at the top of that list/thread + Retry.
+ * onRetry may return a promise; the button is disabled while it runs.
+ */
+export function StaleNotice({ onRetry, testId }) {
+  const [busy, setBusy] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => () => {
+    mounted.current = false;
+  }, []);
+  async function retry() {
+    setBusy(true);
+    try {
+      await onRetry?.();
+    } catch {
+      // the store keeps the notice up on failure
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  }
+  return (
+    <div className="stale-notice" role="status" data-testid={testId}>
+      <span>Couldn't refresh.</span>
+      <button type="button" className="link-btn" onClick={retry} disabled={busy} aria-busy={busy || undefined} aria-label="Retry refreshing" data-testid={testId ? `${testId}-retry` : undefined}>
+        Retry
+      </button>
+    </div>
+  );
+}
+
+/**
+ * "Too many attempts, try again in Ns" while an auth form is locked by Retry-After.
+ * role=timer (not alert) so screen readers aren't interrupted every second; the error styling
+ * and data-testid match FormError.
+ */
+export function RateLimitCountdown({ message }) {
+  return (
+    <p className="error form-error" role="timer" aria-live="off" data-testid="form-error" data-rate-limited="true">
+      {message}
+    </p>
   );
 }

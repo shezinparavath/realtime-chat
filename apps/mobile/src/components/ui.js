@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { colors } from '../theme';
 
@@ -49,6 +50,44 @@ export function FormError({ message }) {
   if (!message) return null;
   return (
     <Text style={[s.errorText, { marginVertical: 8 }]} accessibilityRole="alert" accessibilityLiveRegion="assertive" testID="form-error">
+      {message}
+    </Text>
+  );
+}
+
+/**
+ * Rulings: stale data UX #1: a background refetch failed but cached data is still shown.
+ * Small, non-blocking (polite, not an alert) notice at the top of that list/thread + Retry.
+ * onRetry may return a promise; Retry is disabled while it runs.
+ */
+export function StaleNotice({ onRetry, testID }) {
+  const [busy, setBusy] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => () => {
+    mounted.current = false;
+  }, []);
+  async function retry() {
+    setBusy(true);
+    try {
+      await onRetry?.();
+    } catch {
+      // the store keeps the notice up on failure
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  }
+  return (
+    <View style={s.stale} accessibilityLiveRegion="polite" testID={testID}>
+      <Text style={s.staleText}>Couldn't refresh.</Text>
+      <Button title="Retry" variant="link" onPress={retry} disabled={busy} busy={busy} accessibilityLabel="Retry refreshing" testID={testID ? `${testID}-retry` : undefined} />
+    </View>
+  );
+}
+
+/** "Too many attempts, try again in Ns" while an auth form is locked by Retry-After (not re-announced every tick). */
+export function RateLimitCountdown({ message }) {
+  return (
+    <Text style={[s.errorText, { marginVertical: 8 }]} accessibilityLiveRegion="none" testID="form-error">
       {message}
     </Text>
   );
@@ -123,6 +162,8 @@ export const s = StyleSheet.create({
   btnSecondaryText: { color: colors.text, fontWeight: '600', fontSize: 15 },
   linkBtn: { paddingVertical: 4, paddingHorizontal: 2 },
   linkText: { color: colors.primary, fontWeight: '600', fontSize: 15 },
+  stale: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.hintBg, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 2, marginHorizontal: 12, marginBottom: 6 },
+  staleText: { color: colors.hint, fontSize: 14, fontWeight: '600' },
   field: { marginBottom: 12 },
   label: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 4 },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, backgroundColor: colors.card, color: colors.text },

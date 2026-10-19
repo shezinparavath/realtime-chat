@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
-import { Field, FormError, WakingHint } from '../components/Field.jsx';
+import { Field, FormError, RateLimitCountdown, WakingHint } from '../components/Field.jsx';
 import {
   PASSWORD_MAX,
   PASSWORD_MIN,
@@ -12,6 +12,7 @@ import {
   validateSignup,
   withRetry,
 } from '../lib/validation.js';
+import { useRateLimitLock } from '../hooks/useRateLimitLock.js';
 import { navigate } from '../router.js';
 
 export function SignupPage() {
@@ -22,9 +23,11 @@ export function SignupPage() {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [slow, setSlow] = useState(false);
+  const rateLock = useRateLimitLock(() => setErrors({}));
 
   async function onSubmit(e) {
     e?.preventDefault();
+    if (rateLock.locked) return;
     const fields = { email: normalizeEmail(email), username: normalizeSignupUsername(username), password };
     const v = validateSignup(fields);
     setErrors(v);
@@ -35,6 +38,12 @@ export function SignupPage() {
       await signup(fields, { onSlow: () => setSlow(true) });
       navigate('/', { replace: true });
     } catch (err) {
+      if (rateLock.lockFrom(err)) {
+        // 429 with Retry-After: the countdown replaces the form error; submit stays disabled until 0.
+        setErrors({});
+        setSubmitting(false);
+        return;
+      }
       setErrors(withRetry(err, serverErrorToFormErrors(err, ['email', 'username', 'password'])));
       setSubmitting(false);
     }
@@ -76,14 +85,20 @@ export function SignupPage() {
           hint={`${PASSWORD_MIN}–${PASSWORD_MAX} characters`}
           disabled={submitting}
         />
-        <FormError message={errors._form} />
-        {errors._retry && (
+        {rateLock.locked ? <RateLimitCountdown message={rateLock.message} /> : <FormError message={errors._form} />}
+        {errors._retry && !rateLock.locked && (
           <button type="button" onClick={() => onSubmit()} data-testid="signup-retry">
             Retry
           </button>
         )}
         {submitting && slow && <WakingHint />}
-        <button type="submit" className="primary" disabled={submitting} aria-busy={submitting || undefined} data-testid="signup-submit">
+        <button
+          type="submit"
+          className="primary"
+          disabled={submitting || rateLock.locked}
+          aria-busy={submitting || undefined}
+          title={rateLock.locked ? rateLock.message : undefined}
+          data-testid="signup-submit">
           {submitting ? (slow ? 'Waking server…' : 'Creating account…') : 'Sign up'}
         </button>
       </form>

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { otherParticipant, useChats } from '../chats/ChatsContext.jsx';
 import { chatPath } from '../router.js';
-import { ErrorBlock, WakingHint } from './Field.jsx';
+import { ErrorBlock, StaleNotice, WakingHint } from './Field.jsx';
 import { formatTime } from './time.js';
 
 /**
@@ -23,6 +23,7 @@ export function ChatList() {
   return (
     <section className="card" aria-labelledby="chats-title">
       <h2 id="chats-title">Chats</h2>
+      {listState.status === 'ok' && listState.stale && <StaleNotice onRetry={() => loadChats({ background: true })} testId="chats-stale" />}
       {showLoading && (
         <>
           <p className="muted" role="status" data-testid="chats-loading">

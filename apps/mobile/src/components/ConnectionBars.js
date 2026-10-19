@@ -20,7 +20,13 @@ export function ReconnectingBar() {
   );
 }
 
-/** Small connection footer: API health + socket state; tap for details. Shows "Waking server…" on cold start. */
+/**
+ * Small connection footer; tap for details. Shows "Waking server…" on cold start.
+ * Rulings: stale data UX #2: the status is driven ONLY by the live socket state (the same
+ * useSocketContext source as the Reconnecting… bar), so it can never say ok while disconnected.
+ * The Phase 1 one-time "API ok" health label is gone; GET /health still fires once on mount, only to
+ * wake a sleeping Render instance and show the waking hint while it's slow.
+ */
 export function ConnectionFooter({ showSocket }) {
   const health = useHealth();
   const sock = useSocketContext();
@@ -43,16 +49,15 @@ export function ConnectionFooter({ showSocket }) {
           accessibilityState={{ expanded: open }}
         >
           <Text style={st.footerText}>
-            <Text style={{ color: dot(health.state) }}>●</Text> API {health.state}
             {showSocket ? (
               <>
-                {' · '}
                 <Text style={{ color: dot(sock.status) }}>●</Text> live <Text testID="socket-status">{sock.status}</Text>
               </>
-            ) : null}
+            ) : (
+              'Connection details'
+            )}
           </Text>
         </Pressable>
-        {health.state === 'error' && <Button title="Retry" variant="link" onPress={health.retry} accessibilityLabel="Retry API health check" testID="health-retry" />}
         {showSocket && (sock.status === 'error' || sock.status === 'disconnected') && (
           <Button title="Reconnect" variant="link" onPress={sock.reconnect} accessibilityLabel="Reconnect live connection" testID="socket-reconnect" />
         )}
@@ -61,7 +66,6 @@ export function ConnectionFooter({ showSocket }) {
       {open && (
         <Text style={st.details} selectable>
           backend {API_URL}
-          {'\n'}health {health.state === 'ok' ? `ok · db ${health.data?.db} · uptime ${health.data?.uptime}s` : health.error || health.state}
           {showSocket ? `\nsocket ${sock.status}${sock.transport ? ` · ${sock.transport}` : ''}${sock.reconnectAttempt ? ` · attempt ${sock.reconnectAttempt}` : ''}${sock.lastError && sock.status !== 'connected' ? ` · ${sock.lastError}` : ''}` : ''}
         </Text>
       )}
@@ -70,7 +74,7 @@ export function ConnectionFooter({ showSocket }) {
 }
 
 function dot(state) {
-  if (state === 'ok' || state === 'connected') return colors.ok;
+  if (state === 'connected') return colors.ok;
   if (state === 'error' || state === 'unauthorized' || state === 'disconnected') return colors.error;
   return colors.hint;
 }

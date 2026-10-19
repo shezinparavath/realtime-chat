@@ -14,7 +14,13 @@
 //                                   sendErrorCode (ack ok:false with that code) }
 //                                   REST: { rateLimitAuth (429 on /auth/signup|login), rateLimitRest (429 on other
 //                                   non-hook REST), restDelayMs (delay non-hook REST), failRest: { status, match } (fail REST
-//                                   whose "METHOD /path?query" contains match) }
+//                                   whose "METHOD /path?query" contains match; optional count: N -> only the next N
+//                                   matching requests fail, then the fault clears itself) }
+//                                   Retry-After (RTC-P4-02): rateLimitAuth / rateLimitRest may be a number of seconds
+//                                   (sent as the Retry-After header; true = 429 without the header, as before);
+//                                   rateLimitSend may be a number of ms (sent as error.retryAfterMs; true = no value).
+//                                   exposeRetryAfter: true adds Access-Control-Expose-Headers: Retry-After (so a browser
+//                                   can read it; default off, like the server today).
 //   POST /__mock/block-user         { username, blocked } drop that user's sockets and close new
 //                                   transports before CONNECT (simulated outage) -> client keeps retrying
 //   POST /__mock/bulk-messages      { chatId, username, count } insert count messages from username
@@ -57,7 +63,7 @@ const users = new Map(); // id -> { id, email, username, passwordHash, salt }
 const chats = new Map(); // id -> { id, participantIds:[a,b], lastMessage, createdAt, updatedAt }
 const messages = new Map(); // chatId -> [Message] in insert (_id) order
 const blockedUsers = new Set();
-const NO_FAULTS = { dropAcks: false, ackDelayMs: 0, emitDelayMs: 0, suppressEmit: false, rateLimitAuth: false, rateLimitRest: false, rateLimitSend: false, sendErrorCode: null, restDelayMs: 0, failRest: null };
+const NO_FAULTS = { dropAcks: false, ackDelayMs: 0, emitDelayMs: 0, suppressEmit: false, rateLimitAuth: false, rateLimitRest: false, rateLimitSend: false, sendErrorCode: null, restDelayMs: 0, failRest: null, exposeRetryAfter: false };
 let faults = { ...NO_FAULTS };
 // ObjectId-like: 4-byte seconds + 5 random bytes + 3-byte counter -> monotonic per insert (ruling P3-11).
 const idRandom = crypto.randomBytes(5).toString('hex');
@@ -98,16 +104,18 @@ if (process.env.MOCK_SEED) {
 
 // ---------- helpers ----------
 class HttpError extends Error {
-  constructor(status, code, message, field) {
+  constructor(status, code, message, field, headers) {
     super(message);
-    Object.assign(this, { status, code, field });
+    Object.assign(this, { status, code, field, headers });
   }
 }
+// rateLimit* fault value -> extra headers: a positive number is Retry-After seconds (whole, >= 1).
+const retryAfterHeaders = (v) => (typeof v === 'number' && v > 0 ? { 'Retry-After': String(Math.max(1, Math.ceil(v))) } : undefined);
 const vErr = (field, message) => new HttpError(400, 'VALIDATION_ERROR', message, field);
 const USERNAME_RE = /^[a-z0-9_.]{3,20}$/;
 
-function send(res, status, body) {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+function send(res, status, body, headers) {
+  res.writeHead(status, { 'Content-Type': 'application/json', ...headers });
   res.end(JSON.stringify(body));
 }
 function cors(req, res) {
@@ -115,6 +123,7 @@ function cors(req, res) {
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  if (faults.exposeRetryAfter) res.setHeader('Access-Control-Expose-Headers', 'Retry-After');
 }
 async function readJson(req) {
   let raw = '';
@@ -278,18 +287,23 @@ const server = http.createServer(async (req, res) => {
     if (!hookOrHealth) {
       if (faults.restDelayMs) await new Promise((r) => setTimeout(r, faults.restDelayMs));
       const isAuthWrite = url.pathname === '/auth/login' || url.pathname === '/auth/signup';
-      if ((isAuthWrite && faults.rateLimitAuth) || (!isAuthWrite && faults.rateLimitRest))
-        throw new HttpError(429, 'RATE_LIMITED', 'Too many requests, slow down');
-      const f = faults.failRest; // { status, match } -> fail requests whose "METHOD /path?query" contains match
-      if (f && `${req.method} ${url.pathname}${url.search}`.includes(f.match || ''))
+      const rl = isAuthWrite ? faults.rateLimitAuth : faults.rateLimitRest;
+      if (rl) throw new HttpError(429, 'RATE_LIMITED', 'Too many requests, slow down', undefined, retryAfterHeaders(rl));
+      const f = faults.failRest; // { status, match, count? } -> fail requests whose "METHOD /path?query" contains match
+      if (f && `${req.method} ${url.pathname}${url.search}`.includes(f.match || '')) {
+        if (typeof f.count === 'number') {
+          f.count -= 1;
+          if (f.count <= 0) faults = { ...faults, failRest: null };
+        }
         throw new HttpError(f.status, f.status >= 500 ? 'SERVER_ERROR' : 'HTTP_ERROR', 'Injected failure');
+      }
     }
     await route(req, res, url);
   } catch (err) {
     if (err instanceof HttpError) {
       const error = { code: err.code, message: err.message };
       if (err.field) error.field = err.field;
-      return send(res, err.status, { error });
+      return send(res, err.status, { error }, err.headers);
     }
     console.error(err);
     send(res, 500, { error: { code: 'SERVER_ERROR', message: 'Internal error' } });
@@ -320,8 +334,9 @@ io.on('connection', (socket) => {
       const r = reply;
       reply = (body) => setTimeout(() => r(body), faults.ackDelayMs);
     }
-    const fail = (code, message) => reply({ ok: false, error: { code, message } });
-    if (faults.rateLimitSend) return fail('RATE_LIMITED', 'Too many messages, slow down');
+    const fail = (code, message, extra) => reply({ ok: false, error: { code, message, ...extra } });
+    if (faults.rateLimitSend)
+      return fail('RATE_LIMITED', 'Too many messages, slow down', typeof faults.rateLimitSend === 'number' ? { retryAfterMs: Math.max(1, Math.round(faults.rateLimitSend)) } : undefined);
     if (faults.sendErrorCode) return fail(faults.sendErrorCode, `Injected ${faults.sendErrorCode}`);
     if (!payload || typeof payload !== 'object' || !isId(payload.chatId)) return fail('VALIDATION_ERROR', 'Invalid chatId');
     const c = chats.get(payload.chatId);
