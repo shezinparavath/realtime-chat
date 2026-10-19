@@ -3,6 +3,8 @@
 const { verifyToken } = require('./lib/jwt');
 const { AppError, ackError } = require('./errors');
 const { sendMessage } = require('./services/messages');
+const { createWindowLimiter } = require('./middleware/rateLimit');
+const { RATE_LIMITED, RATE_LIMITED_MESSAGE } = require('./constants');
 
 /**
  * Socket.IO wiring. Handshake must carry auth: { token } (valid JWT), else the
@@ -22,6 +24,16 @@ function attachSocketHandlers(io, config) {
     const { user } = socket.data;
     socket.join(`user:${user.id}`);
 
+    const sendLimiter = createWindowLimiter({
+      max: config.rateLimits.sendMax,
+      windowMs: config.rateLimits.sendWindowMs,
+    });
+
+    // Never log the token — only socket id, user id and the reason.
+    socket.on('disconnect', (reason) => {
+      console.log(`[socket] disconnect socketId=${socket.id} userId=${user.id} reason=${reason}`);
+    });
+
     socket.emit('hello', {
       message: 'welcome',
       socketId: socket.id,
@@ -32,6 +44,11 @@ function attachSocketHandlers(io, config) {
     // On success emits message:new { message, chat } to BOTH participants' user rooms.
     socket.on('message:send', async (payload, ack) => {
       const reply = typeof ack === 'function' ? ack : () => {};
+      // 10 per 10 s per socket (LOCKED). Counts every attempt; over → nothing saved/emitted.
+      if (!sendLimiter.allow()) {
+        reply(ackError(RATE_LIMITED, RATE_LIMITED_MESSAGE));
+        return;
+      }
       try {
         const body = payload && typeof payload === 'object' ? payload : {};
         const result = await sendMessage({
