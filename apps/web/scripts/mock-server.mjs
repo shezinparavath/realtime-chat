@@ -182,7 +182,7 @@ async function route(req, res, url) {
     const password = typeof b.password === 'string' ? b.password : '';
     if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw vErr('email', 'A valid email is required');
     if (!USERNAME_RE.test(username)) throw vErr('username', 'Username must be 3–20 characters: a–z, 0–9, _ or .');
-    if (password.length < 8 || password.length > 128) throw vErr('password', 'Password must be 8–128 characters');
+    if (password.length < 8 || password.length > 72 || Buffer.byteLength(password, 'utf8') > 72) throw vErr('password', 'Password must be 8–72 characters');
     for (const u of users.values()) {
       if (u.email === email) throw new HttpError(409, 'EMAIL_TAKEN', 'That email is already registered', 'email');
       if (u.username === username) throw new HttpError(409, 'USERNAME_TAKEN', 'That username is taken', 'username');
