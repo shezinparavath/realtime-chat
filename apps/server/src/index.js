@@ -10,7 +10,9 @@ async function main() {
   const config = loadConfig();
 
   if (!config.jwtSecret) {
-    console.warn('[config] JWT_SECRET is unset — placeholder OK for skeleton; set before auth');
+    console.warn(
+      '[config] JWT_SECRET is unset — /auth/* and data routes will answer 500 SERVER_ERROR and all sockets are refused'
+    );
   }
 
   await connectMongo(config.mongodbUri);

@@ -5,6 +5,9 @@ const express = require('express');
 const cors = require('cors');
 const { Server } = require('socket.io');
 const { getDbStatus } = require('./db');
+const { authRouter } = require('./routes/auth');
+const { attachSocketHandlers } = require('./socket');
+const { notFoundHandler, errorHandler } = require('./errors');
 
 /**
  * Build Express app + HTTP server + Socket.IO sharing one listener.
@@ -20,7 +23,7 @@ function createApp(config) {
   };
 
   app.use(cors(corsOptions));
-  app.use(express.json());
+  app.use(express.json({ limit: '100kb' }));
 
   app.get('/health', (_req, res) => {
     const db = getDbStatus();
@@ -39,6 +42,11 @@ function createApp(config) {
     });
   });
 
+  app.use('/auth', authRouter(config));
+
+  app.use(notFoundHandler);
+  app.use(errorHandler);
+
   const httpServer = http.createServer(app);
 
   const io = new Server(httpServer, {
@@ -46,25 +54,7 @@ function createApp(config) {
     path: '/socket.io',
   });
 
-  io.on('connection', (socket) => {
-    socket.emit('hello', {
-      message: 'welcome',
-      socketId: socket.id,
-    });
-
-    socket.on('ping', (payload, ack) => {
-      const body = {
-        pong: true,
-        at: new Date().toISOString(),
-        echo: payload ?? null,
-      };
-      if (typeof ack === 'function') {
-        ack(body);
-      } else {
-        socket.emit('pong', body);
-      }
-    });
-  });
+  attachSocketHandlers(io, config);
 
   return { app, httpServer, io, startedAt };
 }

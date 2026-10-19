@@ -1,13 +1,36 @@
 # Server (`apps/server`)
 
-Minimal Node.js + Express + Socket.IO backend for realtime-chat (RTC-P1-01).
+Node.js + Express + Socket.IO backend for realtime-chat. CommonJS, Node >= 18.
 
 ## Scripts
 
 | Script | Purpose |
 |---|---|
 | `npm start` | Start HTTP + Socket.IO (`node src/index.js`) |
-| `npm test` | Run `node:test` suite (health + hello) |
+| `npm test` | Run the `node:test` suite (uses an in-memory MongoDB via `mongodb-memory-server-core`) |
+
+## Env
+
+| Var | Required | Purpose |
+|---|---|---|
+| `PORT` | no (default 4000) | Render injects it |
+| `MONGODB_URI` | for auth/data routes | Without it `/health` works and auth/data routes answer **500 `SERVER_ERROR`** |
+| `JWT_SECRET` | for auth/data routes + sockets | HS256 signing secret. Without it auth routes answer 500 and every socket is refused |
+| `CLIENT_ORIGINS` / `CORS_ORIGIN` | recommended | Comma-separated allowed origins |
+| `MONGOMS_DOWNLOAD_DIR` | tests only, optional | Where the test mongod binary is cached (first `npm test` downloads ~180 MB) |
+
+## API (locked contract — see project `context/interface-contracts.md`)
+
+All errors: `{ "error": { "code", "message", "field?" } }`.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/health` | public | `{ status, uptime, db }` |
+| POST | `/auth/signup` | public | `{ email, username, password }` → 201 `{ token, user }` |
+| POST | `/auth/login` | public | `{ identifier, password }` → 200 `{ token, user }` |
+| GET | `/auth/me` | Bearer | 200 `{ user }` |
+
+Socket.IO: `io(API_URL, { auth: { token } })`; bad/missing token → `connect_error` with `err.message === 'unauthorized'`. On connect: room `user:<id>` + `hello { message:'welcome', socketId, userId }`.
 
 ## Render
 
@@ -19,11 +42,9 @@ Minimal Node.js + Express + Socket.IO backend for realtime-chat (RTC-P1-01).
 ## Local
 
 ```bash
-cp .env.example .env
+cp .env.example .env   # set JWT_SECRET; MONGODB_URI=mongodb://127.0.0.1:27017/realtime-chat for a local mongod
 npm install
 npm test
 npm start
 # curl http://localhost:4000/health
 ```
-
-See repo handoff / project `handoffs/RTC-P1-01.md` for the interface contract.
