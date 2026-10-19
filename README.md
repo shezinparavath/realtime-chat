@@ -121,7 +121,17 @@ npm install
 npm test
 ```
 
-The first run downloads a MongoDB binary for the in-memory server (about 180 MB, cached afterwards). The web and mobile apps have no automated tests; `npm run build` in `apps/web` checks that the web client compiles.
+The first run downloads a MongoDB binary for the in-memory server (about 180 MB, cached afterwards).
+
+The mobile app has logic tests for its pure modules (validation, message merge/dedupe, chat store):
+
+```bash
+cd apps/mobile
+npm install
+npm test
+```
+
+The web app has no automated tests; `npm run build` in `apps/web` checks that it compiles.
 
 ## Message rules
 
