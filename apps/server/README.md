@@ -17,12 +17,14 @@ Node.js + Express + Socket.IO backend for realtime-chat. CommonJS, Node >= 18.
 | `PORT` | no (default 4000) | Render injects it |
 | `MONGODB_URI` | for auth/data routes | Without it `/health` works and auth/data routes answer **500 `SERVER_ERROR`** |
 | `JWT_SECRET` | for auth/data routes + sockets | HS256 signing secret. Without it auth routes answer 500 and every socket is refused |
-| `CLIENT_ORIGINS` / `CORS_ORIGIN` | recommended | Comma-separated allowed origins |
+| `CLIENT_ORIGINS` / `CORS_ORIGIN` | **required when `NODE_ENV=production`** (server refuses to start otherwise); recommended elsewhere | Comma-separated allowed origins |
 | `MONGOMS_DOWNLOAD_DIR` | tests only, optional | Where the test mongod binary is cached (first `npm test` downloads ~180 MB) |
 
 ## API (locked contract — see project `context/interface-contracts.md`)
 
 All errors: `{ "error": { "code", "message", "field?" } }`.
+
+Rate limits (hardening): `/auth/login` and `/auth/signup` each allow 20 requests / 15 min per IP (`trust proxy` 1). Over the limit → **429** `{ error: { code: 'RATE_LIMITED', message } }` with `RateLimit*` headers and `Retry-After` = whole seconds until the window resets. Socket `message:send` allows 10 / 10 s per socket; over → ack `{ ok:false, error:{ code:'RATE_LIMITED', message, retryAfterMs } }` (integer ms until that socket can send again). `X-Powered-By` is disabled. Socket.IO keepalive: `pingInterval` 20000, `pingTimeout` 25000.
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|

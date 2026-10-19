@@ -23,7 +23,11 @@ async function startMemoryMongo() {
  * Start app on an ephemeral port. With { db: true } spins an in-memory mongod
  * and connects mongoose to it.
  */
-async function startServer({ db = true, env = {} } = {}) {
+// Other suites do many signups/sends from one IP/socket: lift limits unless a
+// test passes its own `rateLimits` (hardening.test.js uses the real/small ones).
+const NO_LIMITS = { authWindowMs: 60_000, authMax: 1e6, sendWindowMs: 10_000, sendMax: 1e6 };
+
+async function startServer({ db = true, env = {}, rateLimits = NO_LIMITS } = {}) {
   let mongod = null;
   if (db) {
     mongod = await startMemoryMongo();
@@ -37,6 +41,7 @@ async function startServer({ db = true, env = {} } = {}) {
     JWT_SECRET: TEST_SECRET,
     ...env,
   });
+  config.rateLimits = { ...config.rateLimits, ...rateLimits };
   const { app, httpServer, io } = createApp(config);
   await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
   const { port } = httpServer.address();

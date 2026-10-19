@@ -10,6 +10,7 @@ const { signToken } = require('../lib/jwt');
 const { requireAuth } = require('../middleware/auth');
 const { requireDb } = require('../middleware/requireDb');
 const { BCRYPT_COST } = require('../constants');
+const { authLimiter } = require('../middleware/rateLimit');
 
 // Used to keep login timing similar when the user does not exist.
 const DUMMY_HASH = bcrypt.hashSync('timing-equalizer-not-a-password', BCRYPT_COST);
@@ -30,9 +31,14 @@ function mapDuplicateKey(err) {
 
 function authRouter(config) {
   const router = express.Router();
+  const { authWindowMs, authMax } = config.rateLimits;
+  // Separate stores: login and signup each allow authMax per window per IP.
+  const signupLimiter = authLimiter({ windowMs: authWindowMs, max: authMax });
+  const loginLimiter = authLimiter({ windowMs: authWindowMs, max: authMax });
 
   router.post(
     '/signup',
+    signupLimiter,
     requireDb(config),
     asyncHandler(async (req, res) => {
       const { email, username, password } = validateSignup(req.body);
@@ -59,6 +65,7 @@ function authRouter(config) {
 
   router.post(
     '/login',
+    loginLimiter,
     requireDb(config),
     asyncHandler(async (req, res) => {
       const { identifier, isEmail, password } = validateLogin(req.body);
