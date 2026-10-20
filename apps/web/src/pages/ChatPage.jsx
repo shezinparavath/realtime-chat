@@ -13,8 +13,13 @@ import { MAX_MESSAGE_LENGTH } from '../config.js';
 const NEAR_TOP_PX = 80;
 const NEAR_BOTTOM_PX = 120;
 
-/** Chat view: header, history with load-older on scroll-up, pending bubbles, composer. */
-export function ChatPage({ chatId }) {
+/**
+ * Chat view: header, history with load-older on scroll-up, pending bubbles, composer.
+ * RTC-UI-03: fills the thread pane (header 56 px, scroller flex 1, composer pinned at the bottom).
+ * `suppressSlow`: another pane's SlowState wins (desktop search). `onSlowChange` reports whether this
+ * pane is showing a SlowState, so the desktop list pane can stand down (one per screen).
+ */
+export function ChatPage({ chatId, suppressSlow = false, onSlowChange }) {
   const { user } = useAuth();
   const { chatsById, loadChat, loadNewest, threads, setOpenChat, listState } = useChats();
   const chat = chatsById[chatId];
@@ -54,29 +59,42 @@ export function ChatPage({ chatId }) {
   const other = otherParticipant(chat, user?.id);
   const notFound = meta.state === 'notFound' || (thread?.status === 'error' && [400, 404].includes(thread.errorStatus));
   const forbidden = thread?.status === 'error' && thread.errorStatus === 403;
+  const { slow: socketSlow, status: socketStatus } = useSocketContext();
+
+  const metaSlow = meta.state === 'loading' && !chat && listState.slow;
+  const threadSlow = !!(thread && ((thread.status === 'loading' && thread.slow) || (thread.olderLoading && thread.olderSlow)));
+  const composerSlow = socketStatus === 'connecting' && socketSlow && !threadSlow;
+  const showingSlow = !suppressSlow && (metaSlow || threadSlow || (composerSlow && !!chat && !notFound && !forbidden));
+  useEffect(() => {
+    onSlowChange?.(showingSlow);
+  }, [showingSlow, onSlowChange]);
+  useEffect(() => () => onSlowChange?.(false), [onSlowChange]);
 
   return (
-    <section className="card chat-card" aria-labelledby="chat-title">
-      <div className="chat-header">
-        <a href="#/">← Chats</a>
+    <section className="chat-card" aria-labelledby="chat-title">
+      <div className="chat-header" data-testid="chat-header">
+        {/* Back only in single-pane (narrow) mode; desktop keeps the list visible (spec §6). */}
+        <a href="#/" className="back-btn" aria-label="Back to chats" data-testid="back-to-chats">
+          <span aria-hidden="true">←</span>
+        </a>
         {chat && (
           <h2 id="chat-title" data-testid="chat-title">
-            Chat with @{other?.username ?? 'unknown'}
+            @{other?.username ?? 'unknown'}
           </h2>
         )}
       </div>
       {meta.state === 'loading' && !chat && (
-        <>
-          {!listState.slow && (
+        <div className="pane-status">
+          {!metaSlow && (
             <p className="muted" role="status" data-testid="chat-loading">
               Loading chat…
             </p>
           )}
-          <SlowState show={listState.slow} variant="block" />
-        </>
+          <SlowState show={metaSlow && !suppressSlow} variant="block" />
+        </div>
       )}
       {meta.state === 'error' && !chat && (
-        <div role="alert">
+        <div role="alert" className="pane-status">
           <p className="error">Couldn't load this chat. {meta.error}</p>
           <button type="button" onClick={() => setAttempt((n) => n + 1)}>
             Retry
@@ -84,27 +102,27 @@ export function ChatPage({ chatId }) {
         </div>
       )}
       {notFound && (
-        <p className="error" role="alert" data-testid="chat-not-found">
+        <p className="error pane-status" role="alert" data-testid="chat-not-found">
           Chat not found.
         </p>
       )}
       {forbidden && (
-        <p className="error" role="alert">
+        <p className="error pane-status" role="alert">
           You are not a participant in this chat.
         </p>
       )}
       {!notFound && !forbidden && chat && (
         <>
           {thread?.status === 'ok' && thread.stale && <StaleNotice onRetry={() => loadNewest(chatId, { refresh: true })} testId="thread-stale" />}
-          <Thread chatId={chatId} meId={user?.id} otherName={other?.username} />
-          <Composer chatId={chatId} suppressSlow={!!(thread && ((thread.status === 'loading' && thread.slow) || (thread.olderLoading && thread.olderSlow)))} />
+          <Thread chatId={chatId} meId={user?.id} otherName={other?.username} suppressSlow={suppressSlow} />
+          <Composer chatId={chatId} suppressSlow={threadSlow || suppressSlow} />
         </>
       )}
     </section>
   );
 }
 
-function Thread({ chatId, meId, otherName }) {
+function Thread({ chatId, meId, otherName, suppressSlow = false }) {
   const { threads, pending, loadNewest, loadOlder, retryMessage, discardMessage } = useChats();
   const t = threads[chatId];
   const mine = pending[chatId] || [];
@@ -135,6 +153,26 @@ function Thread({ chatId, meId, otherName }) {
     if (el && t?.status === 'ok' && t.hasMore && !t.olderLoading && !t.olderError && el.scrollHeight <= el.clientHeight) loadOlder(chatId);
   }, [chatId, t?.status, t?.hasMore, t?.olderLoading, t?.olderError, firstId, loadOlder]);
 
+  // RTC-UI-03 (spec §11 fix 2): the scroller is no longer aria-live (prepended pages and the
+  // "beginning" line were re-read). One sr-only polite region announces only the newest *incoming*
+  // message once: "@name: text". Messages present when the thread first loads, and older pages,
+  // are never announced (only messages newer than everything seen so far).
+  const [announce, setAnnounce] = useState(null);
+  const seenUpTo = useRef(null); // newest createdAt (ms) seen; null until the first load
+  useEffect(() => {
+    if (t?.status !== 'ok') return;
+    const newest = messages.reduce((mx, m) => Math.max(mx, Date.parse(m.createdAt) || 0), 0);
+    if (seenUpTo.current === null) {
+      seenUpTo.current = newest;
+      return;
+    }
+    const fresh = messages.filter((m) => (Date.parse(m.createdAt) || 0) > seenUpTo.current);
+    if (!fresh.length) return;
+    seenUpTo.current = newest;
+    const incoming = fresh.filter((m) => m.senderId !== meId).pop();
+    if (incoming) setAnnounce({ id: incoming.id, text: `@${otherName ?? 'unknown'}: ${incoming.text}` });
+  }, [t?.status, messages, meId, otherName]);
+
   function onScroll(e) {
     const el = e.currentTarget;
     prev.current = { ...prev.current, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, nearBottom: isNearBottom(el) };
@@ -142,16 +180,21 @@ function Thread({ chatId, meId, otherName }) {
   }
 
   return (
-    <div className="thread" ref={scrollRef} onScroll={onScroll} data-testid="thread" aria-live="polite">
+    <>
+    <div className="sr-only" aria-live="polite" data-testid="thread-announcer">
+      {announce && <span key={announce.id}>{announce.text}</span>}
+    </div>
+    <div className="thread" ref={scrollRef} onScroll={onScroll} data-testid="thread">
+      <div className="thread-col">
       {(!t || t.status === 'loading') && (
         <div className="thread-status">
           {/* SlowState block after 4 s (skeleton bubbles: UI-06). */}
-          {!t?.slow && (
+          {!(t?.slow && !suppressSlow) && (
             <p className="muted" role="status" data-testid="thread-loading">
               Loading messages…
             </p>
           )}
-          <SlowState show={!!t?.slow} variant="block" />
+          <SlowState show={!!t?.slow && !suppressSlow} variant="block" />
         </div>
       )}
       {t?.status === 'error' && (
@@ -166,12 +209,12 @@ function Thread({ chatId, meId, otherName }) {
         <>
           {t.olderLoading && (
             <>
-              {!t.olderSlow && (
+              {!(t.olderSlow && !suppressSlow) && (
                 <p className="muted thread-status" role="status" data-testid="older-loading">
                   Loading older messages…
                 </p>
               )}
-              <SlowState show={!!t.olderSlow} variant="inline" />
+              <SlowState show={!!t.olderSlow && !suppressSlow} variant="inline" />
             </>
           )}
           {t.olderError && (
@@ -205,7 +248,9 @@ function Thread({ chatId, meId, otherName }) {
           </ol>
         </>
       )}
+      </div>
     </div>
+    </>
   );
 }
 
@@ -242,7 +287,7 @@ function PendingBubble({ p, onRetry, onDiscard }) {
                 className="link-btn"
                 onClick={onRetry}
                 disabled={wait > 0}
-                aria-label={wait > 0 ? `Retry sending "${preview(p.text)}" (available in ${wait}s)` : `Retry sending "${preview(p.text)}"`}
+                aria-label={wait > 0 ? `Retry sending "${preview(p.text)}" (available shortly)` : `Retry sending "${preview(p.text)}"`}
                 data-testid="retry-send"
               >
                 Retry

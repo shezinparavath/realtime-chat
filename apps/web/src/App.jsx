@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { ChatsProvider } from './chats/ChatsContext.jsx';
 import { ReconnectingBar } from './components/StatusBar.jsx';
@@ -8,6 +8,7 @@ import { ChatPage } from './pages/ChatPage.jsx';
 import { HomePage } from './pages/HomePage.jsx';
 import { LoginPage } from './pages/LoginPage.jsx';
 import { SignupPage } from './pages/SignupPage.jsx';
+import { TWO_PANE_QUERY, useMediaQuery } from './hooks/useMediaQuery.js';
 import { navigate, useRoute } from './router.js';
 import { SocketProvider, useSocketContext } from './socket/SocketContext.jsx';
 import { useHealth } from './useHealth.js';
@@ -19,6 +20,12 @@ function Shell() {
   const route = useRoute();
   const authed = status === 'authenticated';
   const sock = useSocketContext();
+  // RTC-UI-03 (spec §5): two panes at >= 960 px (list + thread side by side), one pane below.
+  const twoPane = useMediaQuery(TWO_PANE_QUERY);
+  // One SlowState per screen (spec §2A, priority submit > search > thread > list). On desktop both
+  // panes are one screen, so the panes tell each other what they're showing.
+  const [searchSlow, setSearchSlow] = useState(false);
+  const [threadSlow, setThreadSlow] = useState(false);
   // RTC-UI-01: the debug footer is gone. The single GET /health on load still wakes a sleeping
   // backend, but it renders nothing.
   useHealth();
@@ -56,31 +63,82 @@ function Shell() {
     );
   } else if (status === 'anonymous') {
     body = route.name === 'signup' ? <SignupPage /> : <LoginPage />;
-  } else if (authed) {
-    body = (
-      // Keyed on user id so the chat cache never leaks between accounts.
-      <ChatsProvider key={user?.id}>
-        {route.name === 'chat' ? <ChatPage chatId={route.chatId} /> : <HomePage />}
-      </ChatsProvider>
+  }
+
+  const inChat = authed && route.name === 'chat';
+  if (authed) {
+    // RTC-UI-03 (spec §5/§6): full-height app. Desktop shows the list pane (340 px) and the thread
+    // pane side by side; narrow web shows one pane at a time (list on #/, thread on #/chats/:id),
+    // mounting only that pane, exactly as before.
+    const showList = twoPane || !inChat;
+    const showThread = twoPane || inChat;
+    return (
+      // Tester hook (rulings: UI polish Q1): live socket state for QA, not visible and not announced.
+      <div
+        className={`app-root app-shell${twoPane ? ' two-pane' : ' one-pane'}${inChat ? ' in-chat' : ''}`}
+        data-socket-status={sock.status}
+        data-testid="app-root"
+        data-layout={twoPane ? 'two-pane' : 'one-pane'}
+      >
+        <ReconnectingBar />
+        {/* Narrow thread hides the app bar; its header has the back button instead (spec §6). */}
+        {!(inChat && !twoPane) && (
+          <header className="app-bar" data-testid="app-bar">
+            <a href="#/" className="brand">
+              Realtime Chat
+            </a>
+            <span className="session">
+              <span className="app-bar-user" data-testid="current-user">
+                @{user?.username}
+              </span>
+              <button type="button" className="text-btn" onClick={() => logout()} data-testid="logout">
+                Log out
+              </button>
+            </span>
+          </header>
+        )}
+        {/* Keyed on user id so the chat cache never leaks between accounts. */}
+        <ChatsProvider key={user?.id}>
+          <div className="panes">
+            {showList && (
+              <aside className="list-pane" aria-label="Chats" data-testid="list-pane">
+                <HomePage
+                  selectedChatId={inChat ? route.chatId : null}
+                  onSearchSlowChange={setSearchSlow}
+                  suppressListSlow={searchSlow || (twoPane && inChat && threadSlow)}
+                />
+              </aside>
+            )}
+            {showThread && (
+              <main className="thread-pane" data-testid="thread-pane">
+                {inChat ? (
+                  // Keyed so switching chats on desktop starts each thread fresh (scroll, composer).
+                  <ChatPage
+                    key={route.chatId}
+                    chatId={route.chatId}
+                    suppressSlow={twoPane && searchSlow}
+                    onSlowChange={setThreadSlow}
+                  />
+                ) : (
+                  <div className="state-block" role="status" data-testid="thread-placeholder">
+                    <p className="state-title">Select a chat</p>
+                    <p className="state-body">Pick a conversation on the left, or search for someone to message.</p>
+                  </div>
+                )}
+              </main>
+            )}
+          </div>
+        </ChatsProvider>
+      </div>
     );
   }
 
   return (
-    // Tester hook (rulings: UI polish Q1): live socket state for QA, not visible and not announced.
     <div className="app-root" data-socket-status={sock.status} data-testid="app-root">
-      {authed && <ReconnectingBar />}
       <header className="app-header">
         <a href="#/" className="brand">
           Realtime Chat
         </a>
-        {authed && (
-          <span className="session">
-            <span data-testid="current-user">@{user?.username}</span>
-            <button type="button" onClick={() => logout()} data-testid="logout">
-              Log out
-            </button>
-          </span>
-        )}
       </header>
       <main>{body}</main>
     </div>
