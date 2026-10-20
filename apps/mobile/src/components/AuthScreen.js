@@ -25,7 +25,7 @@ export function AuthScreen({ title, children }) {
 const st = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   scroll: { padding: 16, flexGrow: 1, justifyContent: 'center' },
-  card: { backgroundColor: colors.card, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: colors.border },
+  card: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: colors.border },
   brand: { fontSize: 14, fontWeight: '700', color: colors.primary, marginBottom: 4 },
   title: { fontSize: 22, fontWeight: '700', color: colors.text, marginBottom: 16 },
 });
