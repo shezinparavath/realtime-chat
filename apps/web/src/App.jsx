@@ -137,12 +137,14 @@ function Shell() {
 
   return (
     <div className="app-root" data-socket-status={sock.status} data-testid="app-root">
-      <header className="app-header">
-        <a href="#/" className="brand">
+      {/* RTC-UI-07 (spec §6, §7.1): no app bar when signed out; brand centred above the 400 px card,
+          both centred in the viewport. */}
+      <main className="auth-shell">
+        <a href="#/" className="brand auth-brand">
           Realtime Chat
         </a>
-      </header>
-      <main>{body}</main>
+        {body}
+      </main>
     </div>
   );
 }

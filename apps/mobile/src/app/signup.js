@@ -5,7 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import { AuthScreen } from '../components/AuthScreen';
 import { useRateLimitLock } from '../hooks/useRateLimitLock';
 import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit';
-import { Button, Field, FormError, RateLimitCountdown, SlowState, s } from '../components/ui';
+import { Button, Field, FormError, PasswordField, RateLimitCountdown, SlowState, s } from '../components/ui';
 import {
   PASSWORD_MAX,
   PASSWORD_MIN,
@@ -27,15 +27,22 @@ export default function SignupScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [slow, setSlow] = useState(false);
   const rateLock = useRateLimitLock(() => setErrors({}));
+  const emailRef = useRef(null);
   const usernameRef = useRef(null);
   const passwordRef = useRef(null);
+  const [submits, setSubmits] = useState(0); // RTC-UI-07: each submit hides the password again
 
   async function onSubmit() {
     if (submitting || rateLock.locked) return;
+    setSubmits((n) => n + 1);
     const fields = { email: normalizeEmail(email), username: normalizeSignupUsername(username), password };
     const v = validateSignup(fields);
     setErrors(v);
-    if (Object.keys(v).length) return;
+    if (Object.keys(v).length) {
+      // RTC-UI-07 (spec §9): focus the first invalid field.
+      (v.email ? emailRef : v.username ? usernameRef : passwordRef).current?.focus();
+      return;
+    }
     setSubmitting(true);
     setSlow(false);
     try {
@@ -53,8 +60,9 @@ export default function SignupScreen() {
   }
 
   return (
-    <AuthScreen title="Create account">
+    <AuthScreen title="Create account" subtitle="It takes a few seconds.">
       <Field
+        ref={emailRef}
         label="Email"
         value={email}
         onChangeText={setEmail}
@@ -83,15 +91,15 @@ export default function SignupScreen() {
         submitBehavior="submit"
         testID="username"
       />
-      <Field
+      <PasswordField
         ref={passwordRef}
         label="Password"
         value={password}
         onChangeText={setPassword}
+        resetKey={submits}
         error={errors.password}
         hint={`${PASSWORD_MIN}–${PASSWORD_MAX} characters`}
         editable={!submitting}
-        secureTextEntry
         autoComplete="new-password"
         textContentType="newPassword"
         returnKeyType="go"
@@ -99,7 +107,7 @@ export default function SignupScreen() {
         testID="password"
       />
       {rateLock.locked ? <RateLimitCountdown message={rateLock.message} /> : <FormError message={errors._form} />}
-      {errors._retry && !rateLock.locked ? <Button title="Retry" variant="secondary" onPress={onSubmit} testID="signup-retry" style={{ marginBottom: 8 }} /> : null}
+      {errors._retry && !rateLock.locked ? <Button title="Retry" variant="secondary" onPress={onSubmit} testID="signup-retry" style={[s.authButton, { marginTop: -8, marginBottom: 16 }]} /> : null}
       <Button
         title={submitting ? 'Creating account…' : 'Sign up'}
         onPress={onSubmit}
@@ -107,6 +115,7 @@ export default function SignupScreen() {
         busy={submitting}
         accessibilityLabel={rateLock.locked ? `Sign up, disabled: ${RATE_LIMITED_MESSAGE}` : undefined}
         testID="signup-submit"
+        style={s.authButton}
       />
       {/* RTC-UI-01: label stays static; SlowState appears below the button after 4 s. */}
       {submitting ? <SlowState show={slow} variant="inline" /> : null}

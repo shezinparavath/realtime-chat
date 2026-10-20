@@ -1,12 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit.js';
 
-export function Field({ id, label, error, hint, ...inputProps }) {
+export function Field({ id, label, error, hint, inputRef, trailing, ...inputProps }) {
   const describedBy = [error && `${id}-error`, hint && `${id}-hint`].filter(Boolean).join(' ') || undefined;
+  const input = <input id={id} name={id} ref={inputRef} aria-invalid={error ? 'true' : undefined} aria-describedby={describedBy} {...inputProps} />;
   return (
     <div className="field">
       <label htmlFor={id}>{label}</label>
-      <input id={id} name={id} aria-invalid={error ? 'true' : undefined} aria-describedby={describedBy} {...inputProps} />
+      {trailing ? (
+        <div className="input-wrap">
+          {input}
+          {trailing}
+        </div>
+      ) : (
+        input
+      )}
       {hint && !error && (
         <small id={`${id}-hint`} className="muted">
           {hint}
@@ -19,6 +27,68 @@ export function Field({ id, label, error, hint, ...inputProps }) {
       )}
     </div>
   );
+}
+
+/**
+ * RTC-UI-07 (spec §9): password field with a trailing "Show" / "Hide" toggle. The toggle is a real
+ * type="button" (never submits), 44 px tall, aria-pressed, named "Show password" / "Hide password"
+ * (the visible word is part of the name). It flips `type` and keeps the caret / selection; a mouse
+ * click while typing leaves focus in the input. `resetKey` changing (each submit) hides it again.
+ */
+export function PasswordField({ id, resetKey, disabled, ...props }) {
+  const [shown, setShown] = useState(false);
+  const inputRef = useRef(null);
+  const selection = useRef(null);
+  useEffect(() => setShown(false), [resetKey]);
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el || !selection.current) return;
+    const [start, end, dir] = selection.current;
+    selection.current = null;
+    try {
+      el.setSelectionRange(start, end, dir);
+    } catch {
+      // some input types don't support selection; password and text both do
+    }
+  }, [shown]);
+  function toggle() {
+    const el = inputRef.current;
+    if (el && el.selectionStart != null) selection.current = [el.selectionStart, el.selectionEnd, el.selectionDirection || 'none'];
+    setShown((v) => !v);
+  }
+  return (
+    <Field
+      id={id}
+      {...props}
+      disabled={disabled}
+      inputRef={inputRef}
+      type={shown ? 'text' : 'password'}
+      trailing={
+        <button
+          type="button"
+          className="pw-toggle"
+          aria-pressed={shown}
+          aria-label={shown ? 'Hide password' : 'Show password'}
+          aria-controls={id}
+          // Mouse/touch while the input has focus: keep focus (and the caret) in the input.
+          onMouseDown={(e) => {
+            if (document.activeElement === inputRef.current) e.preventDefault();
+          }}
+          onClick={toggle}
+          disabled={disabled}
+          data-testid={`${id}-toggle`}
+        >
+          {shown ? 'Hide' : 'Show'}
+        </button>
+      }
+    />
+  );
+}
+
+/** RTC-UI-07: on submit with errors, focus the first invalid field (in form order). */
+export function focusFirstInvalid(errors, order) {
+  const first = order.find((k) => errors[k]);
+  if (first) document.getElementById(first)?.focus();
 }
 
 export function FormError({ message }) {

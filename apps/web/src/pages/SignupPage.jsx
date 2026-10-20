@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
-import { Field, FormError, RateLimitCountdown } from '../components/Field.jsx';
+import { Field, FormError, PasswordField, RateLimitCountdown, focusFirstInvalid } from '../components/Field.jsx';
 import { SlowState } from '../components/SlowState.jsx';
 import {
   PASSWORD_MAX,
@@ -25,15 +25,20 @@ export function SignupPage() {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [slow, setSlow] = useState(false);
+  const [submits, setSubmits] = useState(0); // RTC-UI-07: each submit hides the password again
   const rateLock = useRateLimitLock(() => setErrors({}));
 
   async function onSubmit(e) {
     e?.preventDefault();
     if (rateLock.locked) return;
+    setSubmits((n) => n + 1);
     const fields = { email: normalizeEmail(email), username: normalizeSignupUsername(username), password };
     const v = validateSignup(fields);
     setErrors(v);
-    if (Object.keys(v).length) return;
+    if (Object.keys(v).length) {
+      focusFirstInvalid(v, ['email', 'username', 'password']);
+      return;
+    }
     setSubmitting(true);
     setSlow(false);
     try {
@@ -54,6 +59,7 @@ export function SignupPage() {
   return (
     <section className="card auth-card" aria-labelledby="signup-title">
       <h2 id="signup-title">Create account</h2>
+      <p className="auth-sub">It takes a few seconds.</p>
       <form onSubmit={onSubmit} noValidate>
         <Field
           id="email"
@@ -76,10 +82,10 @@ export function SignupPage() {
           hint={`${USERNAME_MIN}–${USERNAME_MAX} characters: a–z, 0–9, "_" or "." (saved in lowercase)`}
           disabled={submitting}
         />
-        <Field
+        <PasswordField
           id="password"
           label="Password"
-          type="password"
+          resetKey={submits}
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -89,7 +95,7 @@ export function SignupPage() {
         />
         {rateLock.locked ? <RateLimitCountdown message={rateLock.message} /> : <FormError message={errors._form} />}
         {errors._retry && !rateLock.locked && (
-          <button type="button" onClick={() => onSubmit()} data-testid="signup-retry">
+          <button type="button" className="auth-retry" onClick={() => onSubmit()} data-testid="signup-retry">
             Retry
           </button>
         )}
@@ -106,7 +112,7 @@ export function SignupPage() {
         {/* RTC-UI-01: label stays static; SlowState appears below the button after 4 s. */}
         {submitting && <SlowState show={slow} variant="inline" />}
       </form>
-      <p className="muted">
+      <p className="muted auth-link">
         Already have an account? <a href="#/login">Log in</a>
       </p>
     </section>
