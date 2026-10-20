@@ -11,7 +11,7 @@ import { formatTime } from './time.js';
  * Preview: one line, CSS ellipsis, full text from the server (ruling P3-7); "No messages yet" for
  * lastMessage null (ruling P3-8).
  */
-export function ChatList({ suppressSlow = false }) {
+export function ChatList({ suppressSlow = false, selectedChatId = null }) {
   const { user } = useAuth();
   const { sortedChats, listState, loadChats } = useChats();
 
@@ -22,8 +22,10 @@ export function ChatList({ suppressSlow = false }) {
 
   const showLoading = listState.status === 'loading' && sortedChats.length === 0;
   return (
-    <section className="card" aria-labelledby="chats-title">
-      <h2 id="chats-title">Chats</h2>
+    <section className="card chats-card" aria-labelledby="chats-title">
+      <h2 id="chats-title" className="sr-only">
+        Chats
+      </h2>
       {listState.status === 'ok' && listState.stale && <StaleNotice onRetry={() => loadChats({ background: true })} testId="chats-stale" />}
       {showLoading && (
         <>
@@ -49,9 +51,15 @@ export function ChatList({ suppressSlow = false }) {
           {sortedChats.map((c) => {
             const other = otherParticipant(c, user?.id);
             const last = c.lastMessage;
+            const selected = c.id === selectedChatId; // RTC-UI-03: desktop selected row
             return (
               <li key={c.id}>
-                <a href={`#${chatPath(c.id)}`} className="chat-row" data-testid={`chat-row-${other?.username}`}>
+                <a
+                  href={`#${chatPath(c.id)}`}
+                  className={`chat-row${selected ? ' selected' : ''}`}
+                  aria-current={selected ? 'page' : undefined}
+                  data-testid={`chat-row-${other?.username}`}
+                >
                   <span className="chat-row-top">
                     <span className="username">@{other?.username ?? 'unknown'}</span>
                     <span className="muted time">{formatTime(c.updatedAt)}</span>

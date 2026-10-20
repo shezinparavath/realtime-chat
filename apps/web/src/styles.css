@@ -112,6 +112,7 @@ button.primary:active:not(:disabled) { background: var(--color-primary-pressed);
 .chat-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .chat-header h2 { margin: 0; }
 .thread { height: min(60vh, 520px); overflow-y: auto; border: 1px solid var(--color-border); border-radius: 6px; padding: 8px; background: var(--color-bg); }
+.thread-col { min-height: 100%; }
 .thread-status { text-align: center; margin: 4px 0; font-size: 0.85rem; }
 .messages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 /* Bubbles: no border or shadow except Failed (§4.5). Shape / grouping is RTC-UI-04. */
@@ -153,3 +154,44 @@ textarea[aria-invalid='true'] { border-color: var(--color-danger); }
 form .slow-state-inline { margin-top: 4px; }
 .composer-notice { margin: 0 0 4px; font: var(--text-caption); }
 .composer-notice .slow-state-inline { padding: 0; font: var(--text-caption); }
+
+/* ---------- RTC-UI-03: app layout (spec §5, §6). Signed-in only; auth pages keep the old column (UI-07). ---------- */
+.app-shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; max-width: 1280px; margin: 0 auto; overflow: hidden; background: var(--color-bg); box-sizing: border-box; }
+@media (min-width: 1281px) { .app-shell { border-left: 1px solid var(--color-border); border-right: 1px solid var(--color-border); } }
+.app-shell .reconnecting-bar { position: static; flex-shrink: 0; }
+.app-bar { flex-shrink: 0; height: 56px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 var(--space-4); background: var(--color-surface); box-shadow: var(--shadow-sm); position: relative; z-index: 2; }
+.app-bar .brand { font: var(--text-title); color: var(--color-text); }
+.app-bar .session { min-width: 0; }
+.app-bar-user { font: var(--text-secondary); color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.text-btn { border: none; background: none; height: 36px; padding: 0 var(--space-2); border-radius: var(--radius-sm); font: var(--text-secondary); font-weight: 600; color: var(--color-primary); }
+.text-btn:hover:not(:disabled) { background: none; text-decoration: underline; color: var(--color-primary-hover); }
+.text-btn:active:not(:disabled) { background: none; color: var(--color-primary-pressed); }
+@media (max-width: 599px) { .text-btn { height: 44px; } }
+.panes { flex: 1; min-height: 0; display: flex; }
+.list-pane { box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; background: var(--color-surface); }
+.list-pane .card { margin: 0; border: none; border-radius: 0; background: transparent; padding: var(--space-3); }
+.list-pane .chats-card { padding-top: 0; }
+.thread-pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--color-bg); max-width: none; margin: 0; padding: 0; }
+.two-pane .list-pane { width: 340px; flex-shrink: 0; border-right: 1px solid var(--color-border); }
+.one-pane .list-pane { flex: 1; }
+/* 600-959: content max 720 centred; below 600 full width, no gutters. */
+@media (min-width: 600px) and (max-width: 959px) { .one-pane .panes { width: 100%; max-width: 720px; margin: 0 auto; } }
+.chat-row.selected { background: var(--color-primary-subtle); box-shadow: inset 3px 0 0 var(--color-primary); }
+.chat-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.chat-header { flex-shrink: 0; height: 56px; box-sizing: border-box; margin: 0; padding: 0 var(--space-4); gap: var(--space-2); background: var(--color-surface); border-bottom: 1px solid var(--color-border); }
+.chat-header h2 { font: var(--text-title); font-size: 16px; line-height: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.back-btn { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin-left: calc(-1 * var(--space-3)); border-radius: var(--radius-md); color: var(--color-text); text-decoration: none; font-size: 20px; }
+.back-btn:hover { background: var(--color-bg); }
+.two-pane .back-btn { display: none; }
+.app-shell .stale-notice { margin: var(--space-2) var(--space-4) 0; flex-shrink: 0; }
+.app-shell .thread { flex: 1; min-height: 0; height: auto; border: none; border-radius: 0; padding: var(--space-4); background: var(--color-bg); }
+.one-pane .thread { padding: var(--space-3); }
+.app-shell .thread-col { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; justify-content: flex-end; }
+.app-shell .composer { flex-shrink: 0; margin: 0; padding: var(--space-2) var(--space-3); background: var(--color-surface); border-top: 1px solid var(--color-border); }
+.pane-status { padding: var(--space-4); }
+.state-block { max-width: 320px; margin: auto; padding: var(--space-8) var(--space-6); text-align: center; }
+.state-title { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--color-text); }
+.state-body { margin: var(--space-1) 0 0; font: var(--text-secondary); color: var(--color-text-muted); }
+.list-pane .chats-card { padding: 0; }
+.list-pane .chat-row { padding: var(--space-3) var(--space-4); }
+.list-pane .chats-card > :not(.chat-list) { margin-left: var(--space-3); margin-right: var(--space-3); }

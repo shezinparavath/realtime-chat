@@ -259,7 +259,8 @@ function PendingBubble({ p, onRetry, onDiscard }) {
                 variant="link"
                 onPress={onRetry}
                 disabled={wait > 0}
-                accessibilityLabel={wait > 0 ? `Retry sending "${short(p.text)}" (available in ${wait}s)` : `Retry sending "${short(p.text)}"`}
+                // RTC-UI-03 (spec §11 fix 1, DEF-004 rule): static name, never the ticking seconds.
+                accessibilityLabel={wait > 0 ? `Retry sending "${short(p.text)}" (available shortly)` : `Retry sending "${short(p.text)}"`}
                 testID="retry-send"
               />
             )}

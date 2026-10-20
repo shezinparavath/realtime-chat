@@ -7,14 +7,18 @@ import { searchUsers } from '../lib/api.js';
 import { chatPath, navigate } from '../router.js';
 
 /** Home: username search -> start/open a 1:1 chat, plus the chat list. */
-export function HomePage() {
+export function HomePage({ selectedChatId = null, onSearchSlowChange, suppressListSlow = false }) {
   // RTC-UI-01: at most one SlowState per screen; search / open chat (what the user just did) wins
-  // over the chat list's first load.
+  // over the chat list's first load. RTC-UI-03: on desktop the open thread also wins over the list.
   const [searchSlow, setSearchSlow] = useState(false);
+  useEffect(() => {
+    onSearchSlowChange?.(searchSlow);
+  }, [searchSlow, onSearchSlowChange]);
+  useEffect(() => () => onSearchSlowChange?.(false), [onSearchSlowChange]);
   return (
     <>
       <UserSearch onSlowChange={setSearchSlow} />
-      <ChatList suppressSlow={searchSlow} />
+      <ChatList suppressSlow={searchSlow || suppressListSlow} selectedChatId={selectedChatId} />
     </>
   );
 }
@@ -79,8 +83,10 @@ function UserSearch({ onSlowChange }) {
   useEffect(() => () => onSlowChange?.(false), [onSlowChange]);
 
   return (
-    <section className="card" aria-labelledby="search-title">
-      <h2 id="search-title">Find people</h2>
+    <section className="card search-card" aria-labelledby="search-title">
+      <h2 id="search-title" className="sr-only">
+        Find people
+      </h2>
       <label htmlFor="user-search" className="sr-only">
         Search by username
       </label>
