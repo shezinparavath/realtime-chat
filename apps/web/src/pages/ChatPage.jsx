@@ -1,11 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { otherParticipant, useChats, validateMessageText } from '../chats/ChatsContext.jsx';
+import { Avatar } from '../components/Avatar.jsx';
 import { StaleNotice } from '../components/Field.jsx';
+import { SkeletonBubbles } from '../components/Skeleton.jsx';
+import { StateBlock } from '../components/StateBlock.jsx';
 import { SlowState } from '../components/SlowState.jsx';
 import { failedText, groupThread } from '../chats/messageUtils.js';
 import { useCountdown } from '../hooks/useCountdown.js';
 import { rateLimitedMessage } from '../lib/rateLimit.js';
+import { navigate } from '../router.js';
 import { useSocketContext } from '../socket/SocketContext.jsx';
 import { formatClock } from '../components/time.js';
 import { MAX_MESSAGE_LENGTH } from '../config.js';
@@ -77,6 +81,7 @@ export function ChatPage({ chatId, suppressSlow = false, onSlowChange }) {
         <a href="#/" className="back-btn" aria-label="Back to chats" data-testid="back-to-chats">
           <span aria-hidden="true">←</span>
         </a>
+        {chat && <Avatar user={other} size={32} />}
         {chat && (
           <h2 id="chat-title" data-testid="chat-title">
             @{other?.username ?? 'unknown'}
@@ -86,30 +91,22 @@ export function ChatPage({ chatId, suppressSlow = false, onSlowChange }) {
       {meta.state === 'loading' && !chat && (
         <div className="pane-status">
           {!metaSlow && (
-            <p className="muted" role="status" data-testid="chat-loading">
+            <p className="sr-only" role="status" data-testid="chat-loading">
               Loading chat…
             </p>
           )}
           <SlowState show={metaSlow && !suppressSlow} variant="block" />
+          <SkeletonBubbles />
         </div>
       )}
       {meta.state === 'error' && !chat && (
-        <div role="alert" className="pane-status">
-          <p className="error">Couldn't load this chat. {meta.error}</p>
-          <button type="button" onClick={() => setAttempt((n) => n + 1)}>
-            Retry
-          </button>
-        </div>
+        <StateBlock role="alert" title="Couldn't load this chat." body={meta.error} actionLabel="Retry" onAction={() => setAttempt((n) => n + 1)} testId="chat-error" />
       )}
       {notFound && (
-        <p className="error pane-status" role="alert" data-testid="chat-not-found">
-          Chat not found.
-        </p>
+        <StateBlock role="alert" title="Chat not found" body="It may have been removed, or the link is wrong." actionLabel="Back to chats" onAction={() => navigate('/')} testId="chat-not-found" />
       )}
       {forbidden && (
-        <p className="error pane-status" role="alert">
-          You are not a participant in this chat.
-        </p>
+        <StateBlock role="alert" title="You can't view this chat" body="You are not a participant in this chat." actionLabel="Back to chats" onAction={() => navigate('/')} testId="chat-forbidden" />
       )}
       {!notFound && !forbidden && chat && (
         <>
@@ -190,22 +187,19 @@ function Thread({ chatId, meId, otherName, suppressSlow = false }) {
       <div className="thread-col">
       {(!t || t.status === 'loading') && (
         <div className="thread-status">
-          {/* SlowState block after 4 s (skeleton bubbles: UI-06). */}
+          {/* RTC-UI-06 (spec §2A): skeleton bubbles before 4 s, then the one SlowState block above
+              them. Skeletons are aria-hidden; only the polite status / SlowState is announced. */}
           {!(t?.slow && !suppressSlow) && (
-            <p className="muted" role="status" data-testid="thread-loading">
+            <p className="sr-only" role="status" data-testid="thread-loading">
               Loading messages…
             </p>
           )}
           <SlowState show={!!t?.slow && !suppressSlow} variant="block" />
+          <SkeletonBubbles />
         </div>
       )}
       {t?.status === 'error' && (
-        <div className="thread-status" role="alert">
-          <p className="error">Couldn't load messages. {t.error}</p>
-          <button type="button" onClick={() => loadNewest(chatId)}>
-            Retry
-          </button>
-        </div>
+        <StateBlock role="alert" title="Couldn't load messages." body={t.error} actionLabel="Retry" onAction={() => loadNewest(chatId)} testId="thread-error" />
       )}
       {t?.status === 'ok' && (
         <>
@@ -233,9 +227,7 @@ function Thread({ chatId, meId, otherName, suppressSlow = false }) {
             </p>
           )}
           {messages.length === 0 && mine.length === 0 && (
-            <p className="muted thread-status" role="status" data-testid="thread-empty">
-              No messages yet. Say hi!
-            </p>
+            <StateBlock title="No messages yet" body={`Send the first message to @${otherName ?? 'unknown'}.`} testId="thread-empty" />
           )}
           <ol className="messages">
             {rows.map((r) => {

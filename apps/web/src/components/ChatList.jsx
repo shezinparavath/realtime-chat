@@ -2,16 +2,19 @@ import { useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { otherParticipant, useChats } from '../chats/ChatsContext.jsx';
 import { chatPath } from '../router.js';
-import { ErrorBlock, StaleNotice } from './Field.jsx';
+import { Avatar } from './Avatar.jsx';
+import { StaleNotice } from './Field.jsx';
+import { SkeletonRows } from './Skeleton.jsx';
 import { SlowState } from './SlowState.jsx';
-import { formatTime } from './time.js';
+import { StateBlock } from './StateBlock.jsx';
+import { formatListTime } from './time.js';
 
 /**
  * GET /chats list, sorted updatedAt desc (A-4). Live-updated from `message:new` via the store.
  * Preview: one line, CSS ellipsis, full text from the server (ruling P3-7); "No messages yet" for
  * lastMessage null (ruling P3-8).
  */
-export function ChatList({ suppressSlow = false, selectedChatId = null }) {
+export function ChatList({ suppressSlow = false, selectedChatId = null, hidden = false }) {
   const { user } = useAuth();
   const { sortedChats, listState, loadChats } = useChats();
 
@@ -21,30 +24,33 @@ export function ChatList({ suppressSlow = false, selectedChatId = null }) {
   }, []);
 
   const showLoading = listState.status === 'loading' && sortedChats.length === 0;
+  const slowShown = listState.slow && !suppressSlow;
+  // RTC-UI-06: while the search box has text, the results replace the list (spec §7.2). The list
+  // stays mounted (hidden), so its state, live updates and the desktop selection are kept.
   return (
-    <section className="card chats-card" aria-labelledby="chats-title">
+    <section className="card chats-card" aria-labelledby="chats-title" hidden={hidden} data-testid="chats-section">
       <h2 id="chats-title" className="sr-only">
         Chats
       </h2>
       {listState.status === 'ok' && listState.stale && <StaleNotice onRetry={() => loadChats({ background: true })} testId="chats-stale" />}
       {showLoading && (
         <>
-          {/* RTC-UI-01: SlowState block above the loading placeholder after 4 s (skeleton rows: UI-06). */}
-          <SlowState show={listState.slow && !suppressSlow} variant="block" />
-          {!(listState.slow && !suppressSlow) && (
-            <p className="muted" role="status" data-testid="chats-loading">
+          {/* Spec §2A: skeleton rows before 4 s; then the one SlowState block above them. The rows are
+              aria-hidden; only the polite status / SlowState is announced (once). */}
+          <SlowState show={slowShown} variant="block" />
+          {!slowShown && (
+            <p className="sr-only" role="status" data-testid="chats-loading">
               Loading chats…
             </p>
           )}
+          <SkeletonRows count={3} />
         </>
       )}
       {listState.status === 'error' && (
-        <ErrorBlock message={`Couldn't load chats. ${listState.error}`} onRetry={() => loadChats().catch(() => {})} testId="chats-error" />
+        <StateBlock role="alert" title="Couldn't load chats." body={listState.error} actionLabel="Retry" onAction={() => loadChats().catch(() => {})} testId="chats-error" />
       )}
       {listState.status === 'ok' && sortedChats.length === 0 && (
-        <p className="muted" role="status" data-testid="chats-empty">
-          No chats yet. Search for someone above to start one.
-        </p>
+        <StateBlock title="No chats yet" body="Search for a username above to start a conversation." testId="chats-empty" />
       )}
       {sortedChats.length > 0 && (
         <ul className="chat-list" data-testid="chat-list">
@@ -60,12 +66,17 @@ export function ChatList({ suppressSlow = false, selectedChatId = null }) {
                   aria-current={selected ? 'page' : undefined}
                   data-testid={`chat-row-${other?.username}`}
                 >
-                  <span className="chat-row-top">
-                    <span className="username">@{other?.username ?? 'unknown'}</span>
-                    <span className="muted time">{formatTime(c.updatedAt)}</span>
-                  </span>
-                  <span className={`preview${last ? '' : ' muted'}`} data-testid="chat-preview">
-                    {last ? `${last.senderId === user?.id ? 'You: ' : ''}${last.text}` : 'No messages yet'}
+                  <Avatar user={other} size={40} />
+                  <span className="chat-row-body">
+                    <span className="chat-row-top">
+                      <span className="username">@{other?.username ?? 'unknown'}</span>
+                      <span className="time" data-testid="chat-time">
+                        {formatListTime(c.updatedAt)}
+                      </span>
+                    </span>
+                    <span className={`preview${last ? '' : ' empty'}`} data-testid="chat-preview">
+                      {last ? `${last.senderId === user?.id ? 'You: ' : ''}${last.text}` : 'No messages yet'}
+                    </span>
                   </span>
                 </a>
               </li>

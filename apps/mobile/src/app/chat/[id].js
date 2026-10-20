@@ -1,4 +1,4 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,6 +9,8 @@ import { validateMessageText } from '../../chats/chatStore';
 import { buildThreadItems } from '../../chats/threadItems';
 import { ReconnectingBar } from '../../components/ConnectionBars';
 import { KeyboardAvoider } from '../../components/KeyboardAvoider';
+import { SkeletonBubbles } from '../../components/Skeleton';
+import { StateBlock } from '../../components/StateBlock';
 import { Button, ErrorBlock, SlowState, StaleNotice, Status, s } from '../../components/ui';
 import { failedText } from '../../chats/messageUtils';
 import { useCountdown } from '../../hooks/useCountdown';
@@ -70,6 +72,8 @@ function ChatScreen() {
   const notFound = meta.state === 'notFound' || (thread?.status === 'error' && [400, 404].includes(thread.errorStatus));
   const forbidden = thread?.status === 'error' && thread.errorStatus === 403;
   const title = chat ? `@${other?.username ?? 'unknown'}` : 'Chat';
+  const router = useRouter();
+  const backToChats = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
   return (
     <SafeAreaView style={st.root} edges={['bottom', 'left', 'right']}>
@@ -77,33 +81,26 @@ function ChatScreen() {
       <ReconnectingBar />
       <KeyboardAvoider testID="chat-keyboard-avoider">
         {meta.state === 'loading' && !chat && (
-          <View style={st.pad}>
+          <View style={{ flex: 1 }}>
             {!listState.slow ? (
-              <Status spinner testID="chat-loading">
-                Loading chat…
-              </Status>
+              <View accessibilityLiveRegion="polite">
+                <Text style={s.srOnly} testID="chat-loading">
+                  Loading chat…
+                </Text>
+              </View>
             ) : null}
             <SlowState show={!!listState.slow} variant="block" />
+            <SkeletonBubbles />
           </View>
         )}
         {meta.state === 'error' && !chat && (
-          <View style={st.pad}>
-            <ErrorBlock message={`Couldn't load this chat. ${meta.error}`} onRetry={() => setAttempt((n) => n + 1)} testID="chat-error" retryTestID="chat-retry" />
-          </View>
+          <StateBlock alert title="Couldn't load this chat." body={meta.error} actionLabel="Retry" onAction={() => setAttempt((n) => n + 1)} testID="chat-error" actionTestID="chat-retry" />
         )}
         {notFound && (
-          <View style={st.pad}>
-            <Text style={s.errorText} accessibilityRole="alert" testID="chat-not-found">
-              Chat not found.
-            </Text>
-          </View>
+          <StateBlock alert title="Chat not found" body="It may have been removed, or the link is wrong." actionLabel="Back to chats" onAction={backToChats} testID="chat-not-found" />
         )}
         {forbidden && (
-          <View style={st.pad}>
-            <Text style={s.errorText} accessibilityRole="alert">
-              You are not a participant in this chat.
-            </Text>
-          </View>
+          <StateBlock alert title="You can't view this chat" body="You are not a participant in this chat." actionLabel="Back to chats" onAction={backToChats} testID="chat-forbidden" />
         )}
         {!notFound && !forbidden && chat && (
           <>
@@ -129,28 +126,32 @@ function Thread({ chatId, meId, otherName }) {
 
   if (!t || t.status === 'loading') {
     return (
-      <View style={[st.pad, { flex: 1 }]}>
-        {/* SlowState block replaces the loading line after 4 s (skeleton bubbles: UI-06). */}
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        {/* RTC-UI-06 (spec §2A): 3 skeleton bubbles before 4 s, then the one SlowState block above
+            them. Skeletons are hidden from accessibility; only the status / SlowState is read. */}
         {!t?.slow ? (
-          <Status spinner testID="thread-loading">
-            Loading messages…
-          </Status>
+          <View accessibilityLiveRegion="polite">
+            <Text style={s.srOnly} testID="thread-loading">
+              Loading messages…
+            </Text>
+          </View>
         ) : null}
         <SlowState show={!!t?.slow} variant="block" />
+        <SkeletonBubbles />
       </View>
     );
   }
   if (t.status === 'error') {
     return (
-      <View style={[st.pad, { flex: 1 }]}>
-        <ErrorBlock message={`Couldn't load messages. ${t.error}`} onRetry={() => loadNewest(chatId)} testID="thread-error" retryTestID="thread-retry" />
+      <View style={{ flex: 1, justifyContent: 'center' }}>
+        <StateBlock alert title="Couldn't load messages." body={t.error} actionLabel="Retry" onAction={() => loadNewest(chatId)} testID="thread-error" actionTestID="thread-retry" />
       </View>
     );
   }
   if (items.length === 0) {
     return (
-      <View style={[st.pad, { flex: 1, justifyContent: 'center', alignItems: 'center' }]}>
-        <Status testID="thread-empty">No messages yet. Say hi!</Status>
+      <View style={{ flex: 1, justifyContent: 'center' }}>
+        <StateBlock title="No messages yet" body={`Send the first message to @${otherName ?? 'unknown'}.`} testID="thread-empty" />
       </View>
     );
   }
