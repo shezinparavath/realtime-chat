@@ -99,7 +99,7 @@ export function ChatPage({ chatId, suppressSlow = false, onSlowChange }) {
             </p>
           )}
           <SlowState show={metaSlow && !suppressSlow} variant="block" />
-          <SkeletonBubbles />
+          {!metaSlow && <SkeletonBubbles />}
         </div>
       )}
       {meta.state === 'error' && !chat && (
@@ -190,15 +190,15 @@ function Thread({ chatId, meId, otherName, suppressSlow = false }) {
       <div className="thread-col">
       {(!t || t.status === 'loading') && (
         <div className="thread-status">
-          {/* RTC-UI-06 (spec §2A): skeleton bubbles before 4 s, then the one SlowState block above
-              them. Skeletons are aria-hidden; only the polite status / SlowState is announced. */}
+          {/* RTC-UI-06 (spec §2A): skeleton bubbles before 4 s; once slow, the one SlowState block replaces
+              them (Jain, UI-05). Skeletons are aria-hidden; only the polite status / SlowState is announced. */}
           {!(t?.slow && !suppressSlow) && (
             <p className="sr-only" role="status" data-testid="thread-loading">
               Loading messages…
             </p>
           )}
           <SlowState show={!!t?.slow && !suppressSlow} variant="block" />
-          <SkeletonBubbles />
+          {!t?.slow && <SkeletonBubbles />}
         </div>
       )}
       {t?.status === 'error' && (

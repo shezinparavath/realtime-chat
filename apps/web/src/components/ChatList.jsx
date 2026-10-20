@@ -35,15 +35,16 @@ export function ChatList({ suppressSlow = false, selectedChatId = null, hidden =
       {listState.status === 'ok' && listState.stale && <StaleNotice onRetry={() => loadChats({ background: true })} testId="chats-stale" />}
       {showLoading && (
         <>
-          {/* Spec §2A: skeleton rows before 4 s; then the one SlowState block above them. The rows are
-              aria-hidden; only the polite status / SlowState is announced (once). */}
+          {/* Spec §2A: skeleton rows before 4 s. Once slow, the one SlowState replaces them (Jain, UI-05);
+              when another pane's SlowState wins, the rows still go. The rows are aria-hidden; only the
+              polite status / SlowState is announced (once). */}
           <SlowState show={slowShown} variant="block" />
           {!slowShown && (
             <p className="sr-only" role="status" data-testid="chats-loading">
               Loading chats…
             </p>
           )}
-          <SkeletonRows count={3} />
+          {!listState.slow && <SkeletonRows count={3} />}
         </>
       )}
       {listState.status === 'error' && (

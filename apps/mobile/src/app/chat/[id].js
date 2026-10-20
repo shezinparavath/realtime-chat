@@ -93,7 +93,7 @@ function ChatScreen() {
               </View>
             ) : null}
             <SlowState show={!!listState.slow} variant="block" />
-            <SkeletonBubbles />
+            {!listState.slow ? <SkeletonBubbles /> : null}
           </View>
         )}
         {meta.state === 'error' && !chat && (
@@ -130,8 +130,8 @@ function Thread({ chatId, meId, otherName }) {
   if (!t || t.status === 'loading') {
     return (
       <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-        {/* RTC-UI-06 (spec §2A): 3 skeleton bubbles before 4 s, then the one SlowState block above
-            them. Skeletons are hidden from accessibility; only the status / SlowState is read. */}
+        {/* RTC-UI-06 (spec §2A): 3 skeleton bubbles before 4 s; once slow, the one SlowState block replaces
+            them (Jain, UI-05). Skeletons are hidden from accessibility; only the status / SlowState is read. */}
         {!t?.slow ? (
           <View accessibilityLiveRegion="polite">
             <Text style={s.srOnly} testID="thread-loading">
@@ -140,7 +140,7 @@ function Thread({ chatId, meId, otherName }) {
           </View>
         ) : null}
         <SlowState show={!!t?.slow} variant="block" />
-        <SkeletonBubbles />
+        {!t?.slow ? <SkeletonBubbles /> : null}
       </View>
     );
   }
