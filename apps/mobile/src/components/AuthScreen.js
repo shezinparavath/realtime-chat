@@ -1,13 +1,14 @@
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme';
 import { ConnectionFooter } from './ConnectionBars';
+import { KeyboardAvoider } from './KeyboardAvoider';
 
 /** Shared shell for login/signup: keyboard-aware scroll card + connection footer. */
 export function AuthScreen({ title, children }) {
   return (
     <SafeAreaView style={st.root} edges={['top', 'bottom', 'left', 'right']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoider testID="auth-keyboard-avoider">
         <ScrollView contentContainerStyle={st.scroll} keyboardShouldPersistTaps="handled">
           <View style={st.card}>
             <Text style={st.brand}>Realtime Chat</Text>
@@ -18,7 +19,7 @@ export function AuthScreen({ title, children }) {
           </View>
         </ScrollView>
         <ConnectionFooter />
-      </KeyboardAvoidingView>
+      </KeyboardAvoider>
     </SafeAreaView>
   );
 }

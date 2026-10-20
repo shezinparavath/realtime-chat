@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AuthedOnly } from '../../auth/AuthedOnly';
 import { useAuth } from '../../auth/AuthContext';
@@ -8,6 +8,7 @@ import { otherParticipant, useChats } from '../../chats/ChatsContext';
 import { validateMessageText } from '../../chats/chatStore';
 import { buildThreadItems } from '../../chats/threadItems';
 import { ReconnectingBar } from '../../components/ConnectionBars';
+import { KeyboardAvoider } from '../../components/KeyboardAvoider';
 import { Button, ErrorBlock, StaleNotice, Status, WakingHint, s } from '../../components/ui';
 import { useCountdown } from '../../hooks/useCountdown';
 import { rateLimitedMessage } from '../../lib/rateLimit';
@@ -73,7 +74,7 @@ function ChatScreen() {
     <SafeAreaView style={st.root} edges={['bottom', 'left', 'right']}>
       <Stack.Screen options={{ title, headerBackTitle: 'Chats', headerBackAccessibilityLabel: 'Back to chats' }} />
       <ReconnectingBar />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}>
+      <KeyboardAvoider testID="chat-keyboard-avoider">
         {meta.state === 'loading' && !chat && (
           <View style={st.pad}>
             <Status spinner testID="chat-loading">
@@ -108,7 +109,7 @@ function ChatScreen() {
             <Composer chatId={chatId} />
           </>
         )}
-      </KeyboardAvoidingView>
+      </KeyboardAvoider>
     </SafeAreaView>
   );
 }
