@@ -205,7 +205,7 @@ form .slow-state-inline { margin-top: 4px; }
 .messages > .bubble.theirs:not(.g-last) { border-bottom-left-radius: var(--radius-tail); }
 .messages > .bubble .meta { margin-top: 2px; text-align: right; }
 .day-sep { align-self: center; margin: var(--space-4) 0 var(--space-1); list-style: none; }
-.day-sep > span { display: inline-block; font: var(--text-caption); font-weight: 600; color: var(--color-text-muted); background: var(--color-surface-muted); padding: 2px 10px; border-radius: var(--radius-pill); }
+.day-sep [role='separator'] > span { display: inline-block; font: var(--text-caption); font-weight: 600; color: var(--color-text-muted); background: var(--color-surface-muted); padding: 2px 10px; border-radius: var(--radius-pill); }
 .thread-beginning { margin: var(--space-2) 0; text-align: center; font: var(--text-caption); font-weight: 600; color: var(--color-text-muted); }
 .bubble.pending.failed .failed-meta { align-self: stretch; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); }
 .bubble.pending.failed .failed-reason { font: var(--text-caption); color: var(--color-danger); align-self: flex-start; }
@@ -264,3 +264,15 @@ form .slow-state-inline { margin-top: 4px; }
 .state-action { margin-top: var(--space-3); height: 44px; padding: 0 var(--space-4); border-radius: var(--radius-md); font: var(--text-body-strong); color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border-strong); }
 .state-action:hover:not(:disabled) { background: var(--color-bg); }
 .state-action:active:not(:disabled) { background: var(--color-surface-muted); }
+
+/* ---------- RTC-UI-05: composer (spec §7.4). Notice stays as UI-01; behaviour unchanged. ---------- */
+.composer-row { display: flex; align-items: flex-end; gap: var(--space-2); }
+.composer-row textarea { flex: 1; min-width: 0; display: block; box-sizing: border-box; min-height: 44px; max-height: calc(6 * 22px + 20px + 2px); padding: 10px 14px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); font: var(--text-body); resize: none; overflow-y: hidden; }
+.composer-row textarea[aria-invalid='true'] { border-color: var(--color-danger); }
+.composer .send { flex-shrink: 0; box-sizing: border-box; height: 44px; min-width: 72px; padding: 0 var(--space-4); border-radius: var(--radius-md); font: var(--text-body-strong); }
+.composer-meta { display: flex; align-items: baseline; justify-content: flex-end; gap: var(--space-2); }
+.composer-meta.shown { margin-top: var(--space-1); }
+.composer-meta .error { flex: 1; font: var(--text-caption); }
+.composer-meta .counter { font: var(--text-caption); color: var(--color-text-muted); white-space: nowrap; }
+.composer-meta .counter.over { color: var(--color-danger); font-weight: 600; }
+.app-shell .composer { position: relative; } /* contains the sr-only counter */

@@ -216,7 +216,7 @@ function ChatList() {
       {listState.status === 'ok' && listState.stale && <StaleNotice onRetry={() => loadChats({ background: true })} testID="chats-stale" />}
       {showLoading && (
         <View style={{ flex: 1 }}>
-          {/* RTC-UI-06 (spec §2A): 3 skeleton rows before 4 s, then the one SlowState block above them.
+          {/* RTC-UI-06 (spec §2A): 3 skeleton rows before 4 s; once slow, the one SlowState block replaces them (Jain, UI-05).
               The rows are hidden from accessibility; only the polite status / SlowState is read.
               Search replaces this list on mobile, so they never show at the same time. */}
           {!listState.slow ? (
@@ -227,7 +227,7 @@ function ChatList() {
             </View>
           ) : null}
           <SlowState show={!!listState.slow} variant="block" />
-          <SkeletonRows count={3} />
+          {!listState.slow ? <SkeletonRows count={3} /> : null}
         </View>
       )}
       {listState.status === 'error' && (

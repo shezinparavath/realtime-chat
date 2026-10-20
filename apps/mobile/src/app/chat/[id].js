@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AuthedOnly } from '../../auth/AuthedOnly';
 import { useAuth } from '../../auth/AuthContext';
@@ -16,6 +16,9 @@ import { failedText } from '../../chats/messageUtils';
 import { useCountdown } from '../../hooks/useCountdown';
 import { rateLimitedMessage } from '../../lib/rateLimit';
 import { MAX_MESSAGE_LENGTH } from '../../config';
+
+/** RTC-UI-05 (spec §7.4): the counter is shown from this many characters. */
+const COUNTER_FROM = 1800;
 import { formatClock } from '../../lib/time';
 import { useSocketContext } from '../../socket/SocketContext';
 import { colors, radius, type } from '../../theme';
@@ -90,7 +93,7 @@ function ChatScreen() {
               </View>
             ) : null}
             <SlowState show={!!listState.slow} variant="block" />
-            <SkeletonBubbles />
+            {!listState.slow ? <SkeletonBubbles /> : null}
           </View>
         )}
         {meta.state === 'error' && !chat && (
@@ -127,8 +130,8 @@ function Thread({ chatId, meId, otherName }) {
   if (!t || t.status === 'loading') {
     return (
       <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-        {/* RTC-UI-06 (spec §2A): 3 skeleton bubbles before 4 s, then the one SlowState block above
-            them. Skeletons are hidden from accessibility; only the status / SlowState is read. */}
+        {/* RTC-UI-06 (spec §2A): 3 skeleton bubbles before 4 s; once slow, the one SlowState block replaces
+            them (Jain, UI-05). Skeletons are hidden from accessibility; only the status / SlowState is read. */}
         {!t?.slow ? (
           <View accessibilityLiveRegion="polite">
             <Text style={s.srOnly} testID="thread-loading">
@@ -137,7 +140,7 @@ function Thread({ chatId, meId, otherName }) {
           </View>
         ) : null}
         <SlowState show={!!t?.slow} variant="block" />
-        <SkeletonBubbles />
+        {!t?.slow ? <SkeletonBubbles /> : null}
       </View>
     );
   }
@@ -307,8 +310,11 @@ function PendingBubble({ p, onRetry, onDiscard, first = true, last = true }) {
 
 function Composer({ chatId, suppressSlow = false }) {
   const { sendMessage } = useChats();
-  const { status: socketStatus, slow: socketSlow, reconnect } = useSocketContext();
+  const { status: socketStatus, slow: socketSlow, reconnect, everConnected } = useSocketContext();
   const offline = socketStatus !== 'connected';
+  // UIP-11: until the first successful connect, a failed attempt ('reconnecting') still reads as
+  // "Connecting…" then the SlowState; the reconnecting copy (and the bar) only after a first connect.
+  const connecting = socketStatus === 'connecting' || (!everConnected && socketStatus === 'reconnecting');
   const [text, setText] = useState('');
   const [error, setError] = useState(null);
   const length = text.length; // JS UTF-16 length, same unit as the server (ruling P3-5)
@@ -328,17 +334,22 @@ function Composer({ chatId, suppressSlow = false }) {
   // Over the limit: no truncation (no maxLength), red counter, Send disabled, inline error (ruling P3-6).
   const inlineError = over ? validateMessageText(text)?.message : error;
   const sendDisabledReason = over ? 'Message is too long' : blank ? 'Type a message to send' : null;
+  // RTC-UI-05 (spec §7.4): the counter shows from 1800 characters; the row under the input only
+  // takes height when the counter or an error is visible. The error Text stays mounted (empty) so
+  // its assertive live region still announces. TalkBack always has the count in the input's hint.
+  const counterShown = length >= COUNTER_FROM;
+  const metaShown = counterShown || !!inlineError;
   return (
-    <View style={st.composer}>
+    <View style={st.composer} testID="composer">
       {/* RTC-UI-01 (spec §7.4): muted notice, no yellow box (the Reconnecting bar carries the warning).
           Mobile's manual Reconnect moved here from the removed footer (error / disconnected only). */}
       {offline && (
         <View style={st.notice} accessibilityLiveRegion="polite" testID="composer-offline">
-          {socketStatus === 'connecting' && socketSlow && !suppressSlow ? (
+          {connecting && socketSlow && !suppressSlow ? (
             <SlowState show variant="inline" live={false} />
           ) : (
             <Text style={st.noticeText}>
-              {socketStatus === 'connecting'
+              {connecting
                 ? 'Connecting…'
                 : socketStatus === 'error' || socketStatus === 'disconnected'
                   ? "Can't connect right now. Messages you send will fail and can be retried."
@@ -350,7 +361,7 @@ function Composer({ chatId, suppressSlow = false }) {
           ) : null}
         </View>
       )}
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
+      <View style={st.composerRow}>
         <TextInput
           value={text}
           onChangeText={(v) => {
@@ -360,6 +371,8 @@ function Composer({ chatId, suppressSlow = false }) {
           placeholder="Write a message…"
           placeholderTextColor={colors.textMuted}
           multiline
+          // RTC-UI-05: start at 1 line on web too (a bare textarea defaults to 2 rows); native uses minHeight.
+          {...(Platform.OS === 'web' ? { rows: 1 } : null)}
           accessibilityLabel="Message"
           accessibilityHint={inlineError || `${length} of ${MAX_MESSAGE_LENGTH} characters`}
           style={[s.input, st.composerInput, over && { borderColor: colors.danger }]}
@@ -370,16 +383,19 @@ function Composer({ chatId, suppressSlow = false }) {
           onPress={submit}
           disabled={over || blank}
           accessibilityLabel={sendDisabledReason ? `Send, disabled: ${sendDisabledReason}` : 'Send message'}
+          style={st.send}
           testID="send"
         />
       </View>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4, gap: 8 }}>
-        <Text style={[s.small, { marginTop: 0, flex: 1, color: colors.danger }]} accessibilityLiveRegion="assertive" testID="composer-error">
+      <View style={metaShown ? st.meta : st.metaHidden} testID="composer-meta">
+        <Text style={st.metaError} accessibilityLiveRegion="assertive" testID="composer-error">
           {inlineError || ''}
         </Text>
-        <Text style={[s.small, { marginTop: 0 }, over && { color: colors.danger, fontWeight: '700' }]} testID="composer-counter">
-          {length} / {MAX_MESSAGE_LENGTH}
-        </Text>
+        {counterShown ? (
+          <Text style={[st.counter, over && st.counterOver]} testID="composer-counter">
+            {length} / {MAX_MESSAGE_LENGTH}
+          </Text>
+        ) : null}
       </View>
     </View>
   );
@@ -399,8 +415,16 @@ const st = StyleSheet.create({
   dayChip: { ...type.caption, fontWeight: '600', color: colors.textMuted, backgroundColor: colors.surfaceMuted, paddingHorizontal: 10, paddingVertical: 2, borderRadius: radius.pill, overflow: 'hidden' },
   beginning: { ...type.caption, fontWeight: '600', color: colors.textMuted, textAlign: 'center', marginVertical: 8 },
   meta: { ...type.caption, color: colors.textMuted, marginTop: 2, alignSelf: 'flex-end' },
-  composer: { borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface, padding: 8 },
-  composerInput: { flex: 1, maxHeight: 140, minHeight: 44 },
+  // RTC-UI-05 (spec §7.4): padding 8 12; [input flex 1] 8 [Send 44 h, min 72]; input 16/22, padding 11 14.
+  composer: { borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface, paddingVertical: 8, paddingHorizontal: 12 },
+  composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  composerInput: { flex: 1, maxHeight: 156, minHeight: 44, ...type.body, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10, borderRadius: radius.md },
+  send: { minWidth: 72, borderRadius: radius.md },
+  meta: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 },
+  metaHidden: { flexDirection: 'row', height: 0, overflow: 'hidden' },
+  metaError: { flex: 1, ...type.caption, color: colors.danger },
+  counter: { ...type.caption, color: colors.textMuted },
+  counterOver: { color: colors.danger, fontWeight: '600' },
   notice: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 8, marginBottom: 4 },
   noticeText: { flexShrink: 1, fontSize: 12, lineHeight: 16, color: colors.textMuted },
 });

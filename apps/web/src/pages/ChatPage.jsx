@@ -14,6 +14,15 @@ import { useSocketContext } from '../socket/SocketContext.jsx';
 import { formatClock } from '../components/time.js';
 import { MAX_MESSAGE_LENGTH } from '../config.js';
 
+/**
+ * UIP-11: until the socket has connected once, a failed first attempt (Socket.IO flips to
+ * 'reconnecting') still reads as "Connecting…" then the SlowState, never the reconnecting copy.
+ */
+const firstConnecting = (status, everConnected) => status === 'connecting' || (!everConnected && status === 'reconnecting');
+
+/** RTC-UI-05 (spec §7.4): the counter is shown from this many characters. */
+const COUNTER_FROM = 1800;
+
 const NEAR_TOP_PX = 80;
 const NEAR_BOTTOM_PX = 120;
 
@@ -63,11 +72,11 @@ export function ChatPage({ chatId, suppressSlow = false, onSlowChange }) {
   const other = otherParticipant(chat, user?.id);
   const notFound = meta.state === 'notFound' || (thread?.status === 'error' && [400, 404].includes(thread.errorStatus));
   const forbidden = thread?.status === 'error' && thread.errorStatus === 403;
-  const { slow: socketSlow, status: socketStatus } = useSocketContext();
+  const { slow: socketSlow, status: socketStatus, everConnected } = useSocketContext();
 
   const metaSlow = meta.state === 'loading' && !chat && listState.slow;
   const threadSlow = !!(thread && ((thread.status === 'loading' && thread.slow) || (thread.olderLoading && thread.olderSlow)));
-  const composerSlow = socketStatus === 'connecting' && socketSlow && !threadSlow;
+  const composerSlow = firstConnecting(socketStatus, everConnected) && socketSlow && !threadSlow;
   const showingSlow = !suppressSlow && (metaSlow || threadSlow || (composerSlow && !!chat && !notFound && !forbidden));
   useEffect(() => {
     onSlowChange?.(showingSlow);
@@ -96,7 +105,7 @@ export function ChatPage({ chatId, suppressSlow = false, onSlowChange }) {
             </p>
           )}
           <SlowState show={metaSlow && !suppressSlow} variant="block" />
-          <SkeletonBubbles />
+          {!metaSlow && <SkeletonBubbles />}
         </div>
       )}
       {meta.state === 'error' && !chat && (
@@ -187,15 +196,15 @@ function Thread({ chatId, meId, otherName, suppressSlow = false }) {
       <div className="thread-col">
       {(!t || t.status === 'loading') && (
         <div className="thread-status">
-          {/* RTC-UI-06 (spec §2A): skeleton bubbles before 4 s, then the one SlowState block above
-              them. Skeletons are aria-hidden; only the polite status / SlowState is announced. */}
+          {/* RTC-UI-06 (spec §2A): skeleton bubbles before 4 s; once slow, the one SlowState block replaces
+              them (Jain, UI-05). Skeletons are aria-hidden; only the polite status / SlowState is announced. */}
           {!(t?.slow && !suppressSlow) && (
             <p className="sr-only" role="status" data-testid="thread-loading">
               Loading messages…
             </p>
           )}
           <SlowState show={!!t?.slow && !suppressSlow} variant="block" />
-          <SkeletonBubbles />
+          {!t?.slow && <SkeletonBubbles />}
         </div>
       )}
       {t?.status === 'error' && (
@@ -233,8 +242,11 @@ function Thread({ chatId, meId, otherName, suppressSlow = false }) {
             {rows.map((r) => {
               if (r.kind === 'day') {
                 return (
-                  <li key={r.key} className="day-sep" role="separator" aria-label={r.label} data-testid="day-separator">
-                    <span aria-hidden="true">{r.label}</span>
+                  // UIP a11y: the <li> stays a list item (axe/Lighthouse "list"); the separator sits inside it.
+                  <li key={r.key} className="day-sep">
+                    <div role="separator" aria-label={r.label} data-testid="day-separator">
+                      <span aria-hidden="true">{r.label}</span>
+                    </div>
                   </li>
                 );
               }
@@ -334,13 +346,28 @@ function isNearBottom(el) {
 
 function Composer({ chatId, suppressSlow = false }) {
   const { sendMessage } = useChats();
-  const { status: socketStatus, slow: socketSlow } = useSocketContext();
+  const { status: socketStatus, slow: socketSlow, everConnected } = useSocketContext();
   const offline = socketStatus !== 'connected';
+  const connecting = firstConnecting(socketStatus, everConnected);
   const [text, setText] = useState('');
   const [error, setError] = useState(null);
+  const inputRef = useRef(null);
   const length = text.length; // JS UTF-16 length, same unit as the server (ruling P3-5)
   const over = length > MAX_MESSAGE_LENGTH;
   const blank = !text.trim();
+
+  // RTC-UI-05 (spec §7.4): 1 row that grows with the content up to 6 lines, then scrolls inside.
+  // Recomputed on every change, so it also shrinks back to 1 line after a send.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const max = parseFloat(getComputedStyle(el).maxHeight) || Infinity;
+    const border = el.offsetHeight - el.clientHeight;
+    const want = el.scrollHeight + border;
+    el.style.height = `${Math.min(want, max)}px`;
+    el.style.overflowY = want > max ? 'auto' : 'hidden';
+  }, [text]);
 
   function submit(e) {
     e?.preventDefault();
@@ -351,6 +378,7 @@ function Composer({ chatId, suppressSlow = false }) {
     }
     setText('');
     setError(null);
+    inputRef.current?.focus(); // focus stays in the input after a send (also from the Send button)
   }
 
   function onKeyDown(e) {
@@ -363,12 +391,15 @@ function Composer({ chatId, suppressSlow = false }) {
   // Over the limit: no truncation, red counter, Send disabled, inline error (ruling P3-6).
   const inlineError = over ? validateMessageText(text)?.message : error;
   const sendDisabledReason = over ? 'Message is too long' : blank ? 'Type a message to send' : null;
+  // Counter visible from COUNTER_FROM chars; below that it stays in the DOM (sr-only) for aria-describedby.
+  const counterShown = length >= COUNTER_FROM;
+  const metaShown = counterShown || !!inlineError;
   return (
-    <form className="composer" onSubmit={submit} noValidate>
+    <form className="composer" onSubmit={submit} noValidate data-testid="composer">
       {/* RTC-UI-01 (spec §7.4): muted notice, no yellow box (the Reconnecting bar carries the warning). */}
       {offline && (
         <div className="muted composer-notice" role="status" data-testid="composer-offline" data-socket={socketStatus}>
-          {socketStatus === 'connecting' ? (
+          {connecting ? (
             socketSlow && !suppressSlow ? (
               <SlowState show variant="inline" live={false} />
             ) : (
@@ -381,30 +412,25 @@ function Composer({ chatId, suppressSlow = false }) {
           )}
         </div>
       )}
-      <label htmlFor="composer-input" className="sr-only">
-        Message
-      </label>
-      <textarea
-        id="composer-input"
-        rows={2}
-        placeholder="Write a message…"
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          setError(null);
-        }}
-        onKeyDown={onKeyDown}
-        aria-invalid={over ? 'true' : undefined}
-        aria-describedby="composer-counter composer-error"
-        data-testid="composer-input"
-      />
-      <div className="composer-bar">
-        <span id="composer-counter" className={`counter${over ? ' over' : ''}`} data-testid="composer-counter">
-          {length} / {MAX_MESSAGE_LENGTH}
-        </span>
-        <span id="composer-error" className="error" aria-live="assertive" data-testid="composer-error">
-          {inlineError || ''}
-        </span>
+      <div className="composer-row">
+        <label htmlFor="composer-input" className="sr-only">
+          Message
+        </label>
+        <textarea
+          id="composer-input"
+          ref={inputRef}
+          rows={1}
+          placeholder="Write a message…"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setError(null);
+          }}
+          onKeyDown={onKeyDown}
+          aria-invalid={over ? 'true' : undefined}
+          aria-describedby="composer-counter composer-error"
+          data-testid="composer-input"
+        />
         <button
           type="submit"
           className="send"
@@ -415,6 +441,14 @@ function Composer({ chatId, suppressSlow = false }) {
         >
           Send
         </button>
+      </div>
+      <div className={`composer-meta${metaShown ? ' shown' : ''}`}>
+        <span id="composer-error" className="error" aria-live="assertive" data-testid="composer-error">
+          {inlineError || ''}
+        </span>
+        <span id="composer-counter" className={`counter${over ? ' over' : ''}${counterShown ? '' : ' sr-only'}`} data-testid="composer-counter" data-shown={counterShown ? 'true' : 'false'}>
+          {length} / {MAX_MESSAGE_LENGTH}
+        </span>
       </div>
     </form>
   );
