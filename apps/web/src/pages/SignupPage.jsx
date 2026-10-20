@@ -58,7 +58,7 @@ export function SignupPage() {
 
   return (
     <section className="card auth-card" aria-labelledby="signup-title">
-      <h2 id="signup-title">Create account</h2>
+      <h1 id="signup-title">Create account</h1>
       <p className="auth-sub">It takes a few seconds.</p>
       <form onSubmit={onSubmit} noValidate>
         <Field

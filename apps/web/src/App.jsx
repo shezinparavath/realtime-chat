@@ -101,18 +101,23 @@ function Shell() {
         )}
         {/* Keyed on user id so the chat cache never leaks between accounts. */}
         <ChatsProvider key={user?.id}>
-          <div className="panes">
+          {/* RTC-UI-07 (a11y): one <main> per page at every width (narrow home/search had none), and one
+              h1 per screen, visually hidden since the design has no visible page title. The list pane is a
+              plain container: its search ("Find people") and "Chats" sections are the labelled regions
+              (an <aside> may not sit inside main, and a second "Chats" region would duplicate the name). */}
+          <main className="panes">
+            <h1 className="sr-only">Realtime Chat</h1>
             {showList && (
-              <aside className="list-pane" aria-label="Chats" data-testid="list-pane">
+              <div className="list-pane" data-testid="list-pane">
                 <HomePage
                   selectedChatId={inChat ? route.chatId : null}
                   onSearchSlowChange={setSearchSlow}
                   suppressListSlow={searchSlow || (twoPane && inChat && threadSlow)}
                 />
-              </aside>
+              </div>
             )}
             {showThread && (
-              <main className="thread-pane" data-testid="thread-pane">
+              <div className="thread-pane" data-testid="thread-pane">
                 {inChat ? (
                   // Keyed so switching chats on desktop starts each thread fresh (scroll, composer).
                   <ChatPage
@@ -127,9 +132,9 @@ function Shell() {
                     <p className="state-body">Pick a conversation on the left, or search for someone to message.</p>
                   </div>
                 )}
-              </main>
+              </div>
             )}
-          </div>
+          </main>
         </ChatsProvider>
       </div>
     );
@@ -140,6 +145,9 @@ function Shell() {
       {/* RTC-UI-07 (spec §6, §7.1): no app bar when signed out; brand centred above the 400 px card,
           both centred in the viewport. */}
       <main className="auth-shell">
+        {/* One h1 per screen: login / signup use their card title; the session screens get a hidden one
+            (outside the role=alert card, so it is not read as part of the alert). */}
+        {status !== 'anonymous' && <h1 className="sr-only">Realtime Chat</h1>}
         <a href="#/" className="brand auth-brand">
           Realtime Chat
         </a>
@@ -153,6 +161,7 @@ export default function App() {
   if (API_URL_MISSING) {
     return (
       <main>
+        <h1 className="sr-only">Realtime Chat</h1>
         <p className="error" role="alert">
           <code>VITE_API_URL</code> is not set. Copy <code>.env.example</code> to <code>.env</code> (or set it in
           the hosting env) and rebuild.

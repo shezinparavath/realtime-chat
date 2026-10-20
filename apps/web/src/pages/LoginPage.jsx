@@ -48,7 +48,7 @@ export function LoginPage() {
 
   return (
     <section className="card auth-card" aria-labelledby="login-title">
-      <h2 id="login-title">Log in</h2>
+      <h1 id="login-title">Log in</h1>
       <p className="auth-sub">Use your email or username.</p>
       {notice && (
         <p className="banner" role="alert" data-testid="auth-notice">
