@@ -19,7 +19,7 @@ function authLimiter({ windowMs, max, clientIpHeader = '' }) {
     keyGenerator: (req) => clientKey(req, clientIpHeader),
     standardHeaders: 'draft-7',
     legacyHeaders: false,
-    // Retry-After (Jain ruling): whole seconds until this IP's window resets,
+    // Retry-After (spec): whole seconds until this IP's window resets,
     // ceil((resetTime - now) / 1000), at least 1. Set explicitly here so it
     // doesn't depend on the library's header mode.
     handler: (req, res) => {

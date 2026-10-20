@@ -36,8 +36,10 @@ apps/mobile   Expo Android client
 ## Local setup
 
 Requirements:
-- Node.js 20.19+ for the server and the web client.
-- Node.js 22.13+ for the mobile client (Expo SDK 58).
+- Node.js 18+ for the server (`apps/server` `engines`: `>=18`).
+- Node.js 20.19+ or 22.12+ for the web client (`apps/web` `engines`: `^20.19.0 || >=22.12.0`).
+- Node.js 22.13+ for the mobile client (Expo SDK 58; `apps/mobile` has no `engines` field).
+- One Node 22.13+ install covers all three.
 - A MongoDB you can reach: a local `mongod`, or your own Atlas cluster.
 
 Each app has its own `.env.example`. Copy it to `.env` in that folder and fill in the values. `.env` files are git-ignored; never commit real values.
@@ -91,7 +93,7 @@ npm run build && npm run preview   # production build, http://localhost:4173
 |---|---|
 | `VITE_API_URL` | Backend origin for REST and Socket.IO, no trailing slash. It is inlined at build time |
 
-The server's `CLIENT_ORIGINS` must include the web origin (e.g. `http://localhost:5173`). More detail is in [`apps/web/README.md`](apps/web/README.md).
+The server's `CLIENT_ORIGINS` must include the web origin: `http://localhost:5173` for `npm run dev` and `http://localhost:4173` for `npm run preview`. The default in `apps/server/.env.example` already has both. More detail is in [`apps/web/README.md`](apps/web/README.md).
 
 ### 3. Mobile (`apps/mobile`)
 
