@@ -10,7 +10,6 @@ const { usersRouter } = require('./routes/users');
 const { chatsRouter } = require('./routes/chats');
 const { attachSocketHandlers } = require('./socket');
 const { notFoundHandler, errorHandler } = require('./errors');
-const { ipDebugMiddleware } = require('./middleware/ipdebug'); // TEMP DEF-001
 const { assertProductionConfig, assertValidConfig } = require('./config');
 const { SOCKET_PING_INTERVAL_MS, SOCKET_PING_TIMEOUT_MS } = require('./constants');
 
@@ -39,9 +38,6 @@ function createApp(config) {
 
   app.use(cors(corsOptions));
   app.use(express.json({ limit: '100kb' }));
-
-  // TEMP DEF-001 [ipdebug] — remove after the Render check (IPDEBUG=1 + ?ipdebug=1; logs no IPs).
-  if (config.ipDebug) app.use('/health', ipDebugMiddleware(config));
 
   app.get('/health', (_req, res) => {
     const db = getDbStatus();
