@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useChats } from '../chats/ChatsContext.jsx';
 import { ChatList } from '../components/ChatList.jsx';
-import { WakingHint } from '../components/Field.jsx';
+import { SlowState } from '../components/SlowState.jsx';
 import { SEARCH_DEBOUNCE_MS } from '../config.js';
 import { searchUsers } from '../lib/api.js';
 import { chatPath, navigate } from '../router.js';
 
 /** Home: username search -> start/open a 1:1 chat, plus the chat list. */
 export function HomePage() {
+  // RTC-UI-01: at most one SlowState per screen; search / open chat (what the user just did) wins
+  // over the chat list's first load.
+  const [searchSlow, setSearchSlow] = useState(false);
   return (
     <>
-      <UserSearch />
-      <ChatList />
+      <UserSearch onSlowChange={setSearchSlow} />
+      <ChatList suppressSlow={searchSlow} />
     </>
   );
 }
@@ -25,7 +28,7 @@ function useDebounced(value, ms) {
   return v;
 }
 
-function UserSearch() {
+function UserSearch({ onSlowChange }) {
   const { openChatWith } = useChats();
   const [input, setInput] = useState('');
   const q = useDebounced(input.trim(), SEARCH_DEBOUNCE_MS);
@@ -68,6 +71,12 @@ function UserSearch() {
   }
 
   const pending = input.trim() !== q; // still typing (debounce window)
+  const searchSlowShown = search.state === 'loading' && search.slow && !!input.trim();
+  const openSlowShown = opening !== null && openSlow;
+  useEffect(() => {
+    onSlowChange?.(searchSlowShown || openSlowShown);
+  }, [searchSlowShown, openSlowShown, onSlowChange]);
+  useEffect(() => () => onSlowChange?.(false), [onSlowChange]);
 
   return (
     <section className="card" aria-labelledby="search-title">
@@ -91,15 +100,16 @@ function UserSearch() {
             Search by username
           </p>
         )}
-        {(search.state === 'loading' || pending) && input.trim() && (
+        {/* Spec §2A: "Searching…" until 4 s, then SlowState inline replaces it. */}
+        {(search.state === 'loading' || pending) && input.trim() && !(searchSlowShown && !pending) && (
           <p className="muted" role="status" data-testid="search-loading">
             Searching…
           </p>
         )}
-        {search.state === 'loading' && search.slow && <WakingHint />}
+        {search.state === 'loading' && input.trim() && !pending && <SlowState show={search.slow} variant="inline" />}
         {search.state === 'error' && !pending && (
           <div role="alert">
-            <p className="error">Search failed: {search.error}</p>
+            <p className="error">Search failed. {search.error}</p>
             <button type="button" onClick={() => setAttempt((n) => n + 1)}>
               Retry
             </button>
@@ -131,10 +141,10 @@ function UserSearch() {
                 >
                   {opening === u.id ? 'Opening…' : openError?.userId === u.id ? 'Retry' : 'Message'}
                 </button>
-                {opening === u.id && openSlow && <WakingHint />}
+                {opening === u.id && <SlowState show={openSlow} variant="inline" />}
                 {openError?.userId === u.id && (
                   <small className="error" role="alert">
-                    Could not open chat: {openError.message}
+                    Couldn't open chat.
                   </small>
                 )}
               </li>

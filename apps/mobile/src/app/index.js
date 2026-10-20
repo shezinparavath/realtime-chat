@@ -6,9 +6,9 @@ import { AuthedOnly } from '../auth/AuthedOnly';
 import { useAuth } from '../auth/AuthContext';
 import { useChats } from '../chats/ChatsContext';
 import { chatPreview, otherParticipant } from '../chats/participants';
-import { ConnectionFooter, ReconnectingBar } from '../components/ConnectionBars';
+import { ReconnectingBar } from '../components/ConnectionBars';
 import { KeyboardAvoider } from '../components/KeyboardAvoider';
-import { Button, ErrorBlock, StaleNotice, Status, WakingHint, s } from '../components/ui';
+import { Button, ErrorBlock, SlowState, StaleNotice, Status, s } from '../components/ui';
 import { SEARCH_DEBOUNCE_MS } from '../config';
 import { searchUsers } from '../lib/api';
 import { formatTime } from '../lib/time';
@@ -68,7 +68,6 @@ function HomeScreen() {
           )}
         </View>
         <View style={{ flex: 1 }}>{searching ? <SearchResults input={input} /> : <ChatList />}</View>
-        <ConnectionFooter showSocket />
       </KeyboardAvoider>
     </SafeAreaView>
   );
@@ -131,14 +130,15 @@ function SearchResults({ input }) {
   const pending = input.trim() !== q; // still typing (debounce window)
   return (
     <View style={st.pad} accessibilityLiveRegion="polite">
-      {(search.state === 'loading' || pending) && (
+      {/* Spec §2A: "Searching…" until 4 s, then SlowState inline replaces it. */}
+      {(search.state === 'loading' || pending) && !(search.state === 'loading' && search.slow && !pending) && (
         <Status spinner testID="search-loading">
           Searching…
         </Status>
       )}
-      {search.state === 'loading' && search.slow && <WakingHint />}
+      {search.state === 'loading' && !pending ? <SlowState show={search.slow} variant="inline" /> : null}
       {search.state === 'error' && !pending && (
-        <ErrorBlock message={`Search failed: ${search.error}`} onRetry={() => setAttempt((n) => n + 1)} testID="search-error" retryTestID="search-retry" />
+        <ErrorBlock message={`Search failed. ${search.error}`} onRetry={() => setAttempt((n) => n + 1)} testID="search-error" retryTestID="search-retry" />
       )}
       {search.state === 'ok' && !pending && search.users.length === 0 && (
         <Status testID="search-empty">No users found starting with “{search.q}”.</Status>
@@ -153,10 +153,10 @@ function SearchResults({ input }) {
             <View style={st.userRow}>
               <View style={{ flex: 1 }}>
                 <Text style={st.username}>@{u.username}</Text>
-                {opening === u.id && openSlow ? <WakingHint /> : null}
+                {opening === u.id ? <SlowState show={openSlow} variant="inline" /> : null}
                 {openError?.userId === u.id ? (
                   <Text style={[s.small, { color: colors.error }]} accessibilityLiveRegion="assertive">
-                    Could not open chat: {openError.message}
+                    Couldn't open chat.
                   </Text>
                 ) : null}
               </View>
@@ -216,15 +216,19 @@ function ChatList() {
       {listState.status === 'ok' && listState.stale && <StaleNotice onRetry={() => loadChats({ background: true })} testID="chats-stale" />}
       {showLoading && (
         <View style={st.pad}>
-          <Status spinner testID="chats-loading">
-            Loading chats…
-          </Status>
-          {listState.slow && <WakingHint />}
+          {/* RTC-UI-01: SlowState block replaces the loading line after 4 s (skeleton rows: UI-06).
+              Search replaces this list on mobile, so they never show at the same time. */}
+          {!listState.slow ? (
+            <Status spinner testID="chats-loading">
+              Loading chats…
+            </Status>
+          ) : null}
+          <SlowState show={!!listState.slow} variant="block" />
         </View>
       )}
       {listState.status === 'error' && (
         <View style={st.pad}>
-          <ErrorBlock message={`Could not load chats: ${listState.error}`} onRetry={() => loadChats().catch(() => {})} testID="chats-error" retryTestID="chats-retry" />
+          <ErrorBlock message={`Couldn't load chats. ${listState.error}`} onRetry={() => loadChats().catch(() => {})} testID="chats-error" retryTestID="chats-retry" />
         </View>
       )}
       {listState.status === 'ok' && sortedChats.length === 0 && (

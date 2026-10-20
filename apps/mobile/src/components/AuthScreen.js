@@ -1,10 +1,9 @@
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme';
-import { ConnectionFooter } from './ConnectionBars';
 import { KeyboardAvoider } from './KeyboardAvoider';
 
-/** Shared shell for login/signup: keyboard-aware scroll card + connection footer. */
+/** Shared shell for login/signup: keyboard-aware scroll card (RTC-UI-01: no connection footer). */
 export function AuthScreen({ title, children }) {
   return (
     <SafeAreaView style={st.root} edges={['top', 'bottom', 'left', 'right']}>
@@ -18,7 +17,6 @@ export function AuthScreen({ title, children }) {
             {children}
           </View>
         </ScrollView>
-        <ConnectionFooter />
       </KeyboardAvoider>
     </SafeAreaView>
   );

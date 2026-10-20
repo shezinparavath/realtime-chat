@@ -33,3 +33,12 @@ export function newerChat(prev, next) {
   if (!next) return prev;
   return next.updatedAt >= prev.updatedAt ? next : prev;
 }
+
+/**
+ * RTC-UI-01: visible / announced text of a Failed bubble. Errors from the send path already read
+ * "Not sent: …" (spec §2A map); anything else (e.g. a server validation message) gets the prefix.
+ */
+export function failedText(error) {
+  if (!error) return 'Not sent';
+  return /^Not sent\b/.test(error) ? error : `Not sent: ${error}`;
+}

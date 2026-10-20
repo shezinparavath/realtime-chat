@@ -4,7 +4,10 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../auth/AuthContext';
 import { ChatsProvider } from '../chats/ChatsContext';
-import { Button, ErrorBlock, Status, WakingHint } from '../components/ui';
+import { SocketStatusHook } from '../components/ConnectionBars';
+import { Button, ErrorBlock, SlowState, Status } from '../components/ui';
+import { API_URL_MISSING } from '../config';
+import { useHealth } from '../useHealth';
 import { SocketProvider } from '../socket/SocketContext';
 import { colors } from '../theme';
 
@@ -36,6 +39,9 @@ function Root() {
   // link or web reload of /chat/<id> isn't redirected away; they render only once authenticated
   // (see AuthedOnly). Only a definite 'anonymous' switches to the login/signup group.
   const signedIn = status !== 'anonymous';
+  // RTC-UI-01: the footer is gone; the single GET /health on launch still wakes a sleeping backend
+  // but renders nothing.
+  useHealth();
   return (
     // One chat store per signed-in user: logging out or switching accounts starts clean.
     <ChatsProvider key={user?.id || 'anonymous'}>
@@ -51,6 +57,13 @@ function Root() {
         </Stack.Protected>
       </Stack>
       {status === 'booting' || status === 'checking' || status === 'unverified' ? <SessionGate /> : null}
+      <SocketStatusHook />
+      {API_URL_MISSING ? (
+        // Build misconfiguration only (never in a correctly built APK); used to live in the footer.
+        <Text style={st.configError} accessibilityRole="alert">
+          EXPO_PUBLIC_API_URL is not set. Rebuild with it set.
+        </Text>
+      ) : null}
     </ChatsProvider>
   );
 }
@@ -62,15 +75,18 @@ function SessionGate() {
     <SafeAreaView style={[StyleSheet.absoluteFill, st.gate]} testID="session-gate">
       {status === 'unverified' ? (
         <View style={{ alignItems: 'center', gap: 12, paddingHorizontal: 24 }}>
-          <ErrorBlock message={`Could not verify your session: ${meError}`} onRetry={retryCheck} testID="session-error" retryTestID="session-retry" />
+          <ErrorBlock message={`Couldn't restore your session. ${meError}`} onRetry={retryCheck} testID="session-error" retryTestID="session-retry" />
           <Button title="Log out" variant="link" onPress={() => logout()} testID="session-logout" />
         </View>
       ) : (
         <View style={{ alignItems: 'center', paddingHorizontal: 24 }}>
-          <Status spinner testID="session-loading">
-            {status === 'booting' ? 'Starting…' : 'Checking your session…'}
-          </Status>
-          {meSlow ? <WakingHint /> : null}
+          {/* Spec §2A: spinner + "Restoring your session…"; SlowState block replaces the line after 4 s. */}
+          {!meSlow ? (
+            <Status spinner testID="session-loading">
+              {status === 'booting' ? 'Starting…' : 'Restoring your session…'}
+            </Status>
+          ) : null}
+          <SlowState show={!!meSlow} variant="block" />
         </View>
       )}
     </SafeAreaView>
@@ -96,4 +112,5 @@ export function ErrorBoundary({ error, retry }) {
 
 const st = StyleSheet.create({
   gate: { backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
+  configError: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 8, backgroundColor: colors.errorBg, color: colors.error, textAlign: 'center' },
 });

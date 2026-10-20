@@ -1,15 +1,16 @@
 import { useEffect } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { ChatsProvider } from './chats/ChatsContext.jsx';
-import { ReconnectingBar, StatusBar } from './components/StatusBar.jsx';
-import { WakingHint } from './components/Field.jsx';
+import { ReconnectingBar } from './components/StatusBar.jsx';
+import { SlowState } from './components/SlowState.jsx';
 import { API_URL_MISSING } from './config.js';
 import { ChatPage } from './pages/ChatPage.jsx';
 import { HomePage } from './pages/HomePage.jsx';
 import { LoginPage } from './pages/LoginPage.jsx';
 import { SignupPage } from './pages/SignupPage.jsx';
 import { navigate, useRoute } from './router.js';
-import { SocketProvider } from './socket/SocketContext.jsx';
+import { SocketProvider, useSocketContext } from './socket/SocketContext.jsx';
+import { useHealth } from './useHealth.js';
 
 const PUBLIC_ROUTES = new Set(['login', 'signup']);
 
@@ -17,6 +18,10 @@ function Shell() {
   const { status, user, logout, meError, meSlow, retryCheck } = useAuth();
   const route = useRoute();
   const authed = status === 'authenticated';
+  const sock = useSocketContext();
+  // RTC-UI-01: the debug footer is gone. The single GET /health on load still wakes a sleeping
+  // backend, but it renders nothing.
+  useHealth();
 
   // Route guards: anonymous users only see login/signup; signed-in users skip them.
   useEffect(() => {
@@ -28,16 +33,19 @@ function Shell() {
   if (status === 'checking') {
     body = (
       <section className="card">
-        <p className="muted" role="status" data-testid="session-checking">
-          Restoring your session…
-        </p>
-        {meSlow && <WakingHint />}
+        {/* SlowState block replaces the line after 4 s (spec §2A). */}
+        {!meSlow && (
+          <p className="muted" role="status" data-testid="session-checking">
+            Restoring your session…
+          </p>
+        )}
+        <SlowState show={meSlow} variant="block" />
       </section>
     );
   } else if (status === 'unverified') {
     body = (
       <section className="card" role="alert">
-        <p className="error">Could not verify your session: {meError}</p>
+        <p className="error">Couldn't restore your session. {meError}</p>
         <button type="button" onClick={retryCheck}>
           Retry
         </button>{' '}
@@ -58,7 +66,8 @@ function Shell() {
   }
 
   return (
-    <>
+    // Tester hook (rulings: UI polish Q1): live socket state for QA, not visible and not announced.
+    <div className="app-root" data-socket-status={sock.status} data-testid="app-root">
       {authed && <ReconnectingBar />}
       <header className="app-header">
         <a href="#/" className="brand">
@@ -74,8 +83,7 @@ function Shell() {
         )}
       </header>
       <main>{body}</main>
-      <StatusBar showSocket={authed} />
-    </>
+    </div>
   );
 }
 

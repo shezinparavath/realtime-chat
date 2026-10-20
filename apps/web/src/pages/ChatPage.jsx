@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { otherParticipant, useChats, validateMessageText } from '../chats/ChatsContext.jsx';
-import { StaleNotice, WakingHint } from '../components/Field.jsx';
+import { StaleNotice } from '../components/Field.jsx';
+import { SlowState } from '../components/SlowState.jsx';
+import { failedText } from '../chats/messageUtils.js';
 import { useCountdown } from '../hooks/useCountdown.js';
 import { rateLimitedMessage } from '../lib/rateLimit.js';
 import { useSocketContext } from '../socket/SocketContext.jsx';
@@ -65,15 +67,17 @@ export function ChatPage({ chatId }) {
       </div>
       {meta.state === 'loading' && !chat && (
         <>
-          <p className="muted" role="status" data-testid="chat-loading">
-            Loading chat…
-          </p>
-          {listState.slow && <WakingHint />}
+          {!listState.slow && (
+            <p className="muted" role="status" data-testid="chat-loading">
+              Loading chat…
+            </p>
+          )}
+          <SlowState show={listState.slow} variant="block" />
         </>
       )}
       {meta.state === 'error' && !chat && (
         <div role="alert">
-          <p className="error">Could not load this chat: {meta.error}</p>
+          <p className="error">Couldn't load this chat. {meta.error}</p>
           <button type="button" onClick={() => setAttempt((n) => n + 1)}>
             Retry
           </button>
@@ -93,7 +97,7 @@ export function ChatPage({ chatId }) {
         <>
           {thread?.status === 'ok' && thread.stale && <StaleNotice onRetry={() => loadNewest(chatId, { refresh: true })} testId="thread-stale" />}
           <Thread chatId={chatId} meId={user?.id} otherName={other?.username} />
-          <Composer chatId={chatId} />
+          <Composer chatId={chatId} suppressSlow={!!(thread && ((thread.status === 'loading' && thread.slow) || (thread.olderLoading && thread.olderSlow)))} />
         </>
       )}
     </section>
@@ -141,15 +145,18 @@ function Thread({ chatId, meId, otherName }) {
     <div className="thread" ref={scrollRef} onScroll={onScroll} data-testid="thread" aria-live="polite">
       {(!t || t.status === 'loading') && (
         <div className="thread-status">
-          <p className="muted" role="status" data-testid="thread-loading">
-            Loading messages…
-          </p>
-          {t?.slow && <WakingHint />}
+          {/* SlowState block after 4 s (skeleton bubbles: UI-06). */}
+          {!t?.slow && (
+            <p className="muted" role="status" data-testid="thread-loading">
+              Loading messages…
+            </p>
+          )}
+          <SlowState show={!!t?.slow} variant="block" />
         </div>
       )}
       {t?.status === 'error' && (
         <div className="thread-status" role="alert">
-          <p className="error">Could not load messages: {t.error}</p>
+          <p className="error">Couldn't load messages. {t.error}</p>
           <button type="button" onClick={() => loadNewest(chatId)}>
             Retry
           </button>
@@ -159,15 +166,17 @@ function Thread({ chatId, meId, otherName }) {
         <>
           {t.olderLoading && (
             <>
-              <p className="muted thread-status" role="status" data-testid="older-loading">
-                Loading older messages…
-              </p>
-              {t.olderSlow && <WakingHint />}
+              {!t.olderSlow && (
+                <p className="muted thread-status" role="status" data-testid="older-loading">
+                  Loading older messages…
+                </p>
+              )}
+              <SlowState show={!!t.olderSlow} variant="inline" />
             </>
           )}
           {t.olderError && (
             <p className="thread-status" role="alert">
-              <span className="error">Could not load older messages: {t.olderError}</span>{' '}
+              <span className="error">Couldn't load older messages.</span>{' '}
               <button type="button" onClick={() => loadOlder(chatId)}>
                 Retry
               </button>
@@ -221,10 +230,10 @@ function PendingBubble({ p, onRetry, onDiscard }) {
         <span className="meta failed-meta" data-code={p.code || undefined}>
           {/* Announced once (static reason); the visible text may tick down every second. */}
           <span className="sr-only" role="alert">
-            Failed{p.error ? `: ${p.error}` : ''}
+            {failedText(p.error)}
           </span>
           <span aria-hidden="true" data-testid="failed-reason">
-            Failed{error ? `: ${error}` : ''}
+            {failedText(error)}
           </span>{' '}
           {p.retryable && (
             <>
@@ -259,7 +268,7 @@ function isNearBottom(el) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
 }
 
-function Composer({ chatId }) {
+function Composer({ chatId, suppressSlow = false }) {
   const { sendMessage } = useChats();
   const { status: socketStatus, slow: socketSlow } = useSocketContext();
   const offline = socketStatus !== 'connected';
@@ -292,14 +301,21 @@ function Composer({ chatId }) {
   const sendDisabledReason = over ? 'Message is too long' : blank ? 'Type a message to send' : null;
   return (
     <form className="composer" onSubmit={submit} noValidate>
+      {/* RTC-UI-01 (spec §7.4): muted notice, no yellow box (the Reconnecting bar carries the warning). */}
       {offline && (
-        <p className="hint composer-notice" role="status" data-testid="composer-offline">
-          {socketStatus === 'connecting' && !socketSlow
-            ? 'Connecting…'
-            : socketStatus === 'connecting'
-              ? 'Waking server… Messages can be sent once connected.'
-              : 'Reconnecting… Messages sent now will fail and can be retried.'}
-        </p>
+        <div className="muted composer-notice" role="status" data-testid="composer-offline" data-socket={socketStatus}>
+          {socketStatus === 'connecting' ? (
+            socketSlow && !suppressSlow ? (
+              <SlowState show variant="inline" live={false} />
+            ) : (
+              'Connecting…'
+            )
+          ) : socketStatus === 'error' || socketStatus === 'disconnected' ? (
+            "Can't connect right now. Messages you send will fail and can be retried."
+          ) : (
+            'Messages sent now will fail and can be retried.'
+          )}
+        </div>
       )}
       <label htmlFor="composer-input" className="sr-only">
         Message

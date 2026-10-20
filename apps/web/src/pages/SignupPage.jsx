@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
-import { Field, FormError, RateLimitCountdown, WakingHint } from '../components/Field.jsx';
+import { Field, FormError, RateLimitCountdown } from '../components/Field.jsx';
+import { SlowState } from '../components/SlowState.jsx';
 import {
   PASSWORD_MAX,
   PASSWORD_MIN,
@@ -92,7 +93,6 @@ export function SignupPage() {
             Retry
           </button>
         )}
-        {submitting && slow && <WakingHint />}
         <button
           type="submit"
           className="primary"
@@ -100,8 +100,11 @@ export function SignupPage() {
           aria-busy={submitting || undefined}
           title={rateLock.locked ? RATE_LIMITED_MESSAGE : undefined}
           data-testid="signup-submit">
-          {submitting ? (slow ? 'Waking server…' : 'Creating account…') : 'Sign up'}
+          {submitting && <span className="spinner spinner-btn" aria-hidden="true" />}
+          {submitting ? 'Creating account…' : 'Sign up'}
         </button>
+        {/* RTC-UI-01: label stays static; SlowState appears below the button after 4 s. */}
+        {submitting && <SlowState show={slow} variant="inline" />}
       </form>
       <p className="muted">
         Already have an account? <a href="#/login">Log in</a>

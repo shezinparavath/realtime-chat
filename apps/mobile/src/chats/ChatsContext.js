@@ -115,12 +115,12 @@ export function ChatsProvider({ children }) {
     const s = socketRef.current;
     if (!s || !s.connected) {
       // Socket.IO would buffer this emit until reconnect; the ruling says no queue, so fail now.
-      fail('DISCONNECTED', 'Not connected. Check your connection and retry.');
+      fail('DISCONNECTED', 'Not sent: no connection.');
       return;
     }
     s.timeout(SEND_ACK_TIMEOUT_MS).emit('message:send', { chatId, text, clientId }, (err, ack) => {
       if (err) {
-        fail('TIMEOUT', 'No response from the server.');
+        fail('TIMEOUT', 'Not sent: no confirmation received.');
         return;
       }
       if (ack?.ok && ack.message) {
@@ -134,7 +134,8 @@ export function ChatsProvider({ children }) {
         fail(code, RATE_LIMITED_MESSAGE, ms ? Date.now() + ms : null);
         return;
       }
-      fail(code, ack?.error?.message || 'The message was not sent.');
+      // RTC-UI-01: a server-side failure never shows the server's own wording.
+      fail(code, code === 'SERVER_ERROR' ? 'Something went wrong. Please try again.' : ack?.error?.message || 'The message was not sent.');
     });
   }, []);
 
@@ -161,7 +162,7 @@ export function ChatsProvider({ children }) {
     const onNew = (payload) => {
       if (payload?.message?.id) dispatch({ type: 'LIVE_MESSAGE', message: payload.message, chat: payload.chat, meId });
     };
-    const onDisconnect = () => dispatch({ type: 'FAIL_ALL_SENDING', error: 'Connection lost before the server confirmed. Retry?' });
+    const onDisconnect = () => dispatch({ type: 'FAIL_ALL_SENDING', error: 'Not sent: connection lost.' });
     const onConnect = () => {
       connects += 1;
       if (connects === 1) return; // first connect: pages load normally
