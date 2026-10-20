@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { ChatsProvider } from './chats/ChatsContext.jsx';
+import { Avatar } from './components/Avatar.jsx';
 import { ReconnectingBar } from './components/StatusBar.jsx';
 import { SlowState } from './components/SlowState.jsx';
 import { API_URL_MISSING } from './config.js';
@@ -88,6 +89,7 @@ function Shell() {
               Realtime Chat
             </a>
             <span className="session">
+              <Avatar user={user} size={28} />
               <span className="app-bar-user" data-testid="current-user">
                 @{user?.username}
               </span>

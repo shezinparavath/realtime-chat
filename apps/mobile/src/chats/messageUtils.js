@@ -92,3 +92,34 @@ export function groupThread(messages, pending, meId, now = new Date()) {
   if (prevRow) prevRow.last = true;
   return rows;
 }
+
+// ---------- RTC-UI-06: list rows + avatars (spec §7.2, §8). Pure, Intl-free; same block on web. ----------
+export const AVATAR_COUNT = 6;
+
+/** Avatar initial: first [a-z0-9] char of the username, uppercased; "?" when there is none. */
+export function avatarInitial(username) {
+  const m = /[a-z0-9]/i.exec(username || '');
+  return m ? m[0].toUpperCase() : '?';
+}
+
+/** Avatar palette index 0..5: sum of the user id's char codes mod 6 (stable per user). */
+export function avatarIndex(id) {
+  let sum = 0;
+  for (const ch of String(id || '')) sum += ch.charCodeAt(0);
+  return sum % AVATAR_COUNT;
+}
+
+/**
+ * Chat list time (device local): null for today (the caller shows the clock, e.g. "4:59 PM"),
+ * "Yesterday", the weekday ("Mon") within 6 days, else "19 Oct" ("19 Oct 2025" for another year).
+ * '' for bad input.
+ */
+export function listDayLabel(date, now = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+  if (days === 0) return null;
+  if (days === 1) return 'Yesterday';
+  if (days > 1 && days <= 6) return DAY_SHORT[d.getDay()];
+  return d.getFullYear() === now.getFullYear() ? `${d.getDate()} ${MONTH_SHORT[d.getMonth()]}` : `${d.getDate()} ${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+}
