@@ -3,7 +3,7 @@
 A one-to-one real-time chat app with a React web client and an Android (Expo) client. Both share one Node.js + Socket.IO backend and a MongoDB database.
 
 - **Web:** https://realtime-chat-web-orcin.vercel.app
-- **Android APK:** `<APK download link>`
+- **Android APK:** https://expo.dev/artifacts/eas/FBxtWUjNymYI021w9NETUc0nkAI19OHFs4wLDbJ0Jk4.apk
 
 > The first load can take up to about 50 s while the free backend server wakes up.
 
@@ -11,8 +11,8 @@ A one-to-one real-time chat app with a React web client and an Android (Expo) cl
 
 | Username | Password |
 |---|---|
-| `<username>` | `<password>` |
-| `<username>` | `<password>` |
+| `demo_alice` | `fox-birch-mint-0526` |
+| `demo_bob` | `globe-fox-tango-8207` |
 
 You can log in with either the username or the email address.
 
