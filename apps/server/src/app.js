@@ -10,7 +10,8 @@ const { usersRouter } = require('./routes/users');
 const { chatsRouter } = require('./routes/chats');
 const { attachSocketHandlers } = require('./socket');
 const { notFoundHandler, errorHandler } = require('./errors');
-const { assertProductionConfig } = require('./config');
+const { ipDebugMiddleware } = require('./middleware/ipdebug'); // TEMP DEF-001
+const { assertProductionConfig, assertValidConfig } = require('./config');
 const { SOCKET_PING_INTERVAL_MS, SOCKET_PING_TIMEOUT_MS } = require('./constants');
 
 /**
@@ -19,20 +20,28 @@ const { SOCKET_PING_INTERVAL_MS, SOCKET_PING_TIMEOUT_MS } = require('./constants
  */
 function createApp(config) {
   assertProductionConfig(config); // throws: NODE_ENV=production without CLIENT_ORIGINS
+  assertValidConfig(config); // throws: malformed TRUST_PROXY_HOPS / CLIENT_IP_HEADER
 
   const app = express();
-  app.disable('x-powered-by'); // Jain ruling (hardening)
-  // Render terminates TLS in one proxy hop → req.ip = real client IP (rate limits).
-  app.set('trust proxy', 1);
+  app.disable('x-powered-by'); // spec: hardening (interface-contracts, nice-to-have + hardening)
+  // DEF-001: trusted proxy hops for req.ip. TRUST_PROXY_HOPS; default 3 in production
+  // (Render: XFF = client, cloudflare, render LB), 1 elsewhere. See config.js.
+  app.set('trust proxy', config.trustProxyHops);
   const startedAt = Date.now();
 
   const corsOptions = {
     origin: config.clientOrigins.length > 0 ? config.clientOrigins : true,
     credentials: true,
+    // Let cross-origin clients read Retry-After on 429s (web countdown #16).
+    // cors() runs before the routers, so limiter 429s carry these headers too.
+    exposedHeaders: ['Retry-After'],
   };
 
   app.use(cors(corsOptions));
   app.use(express.json({ limit: '100kb' }));
+
+  // TEMP DEF-001 [ipdebug] — remove after the Render check (IPDEBUG=1 + ?ipdebug=1; logs no IPs).
+  if (config.ipDebug) app.use('/health', ipDebugMiddleware(config));
 
   app.get('/health', (_req, res) => {
     const db = getDbStatus();

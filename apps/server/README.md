@@ -18,13 +18,17 @@ Node.js + Express + Socket.IO backend for realtime-chat. CommonJS, Node >= 18.
 | `MONGODB_URI` | for auth/data routes | Without it `/health` works and auth/data routes answer **500 `SERVER_ERROR`** |
 | `JWT_SECRET` | for auth/data routes + sockets | HS256 signing secret. Without it auth routes answer 500 and every socket is refused |
 | `CLIENT_ORIGINS` / `CORS_ORIGIN` | **required when `NODE_ENV=production`** (server refuses to start otherwise); recommended elsewhere | Comma-separated allowed origins |
+| `TRUST_PROXY_HOPS` | no (default **`3` when `NODE_ENV=production`**, `1` otherwise) | Integer 0–10 passed to Express `trust proxy`: how many hops in front of the app (socket peer included) to skip from the right of `X-Forwarded-For`. On Render XFF is `<client>, <cloudflare>, <render LB>` plus an internal socket peer → 3 (Varun, 20 Oct). `req.ip` = that entry, so client-supplied (forged) leftmost entries are ignored. Must equal the **real** hop count: too high lets a client pick its own key, too low puts everyone behind a proxy into one counter. An explicit value always wins over the default. Malformed → refuses to start |
+| `CLIENT_IP_HEADER` | no (default **`CF-Connecting-IP` when `NODE_ENV=production`**, none otherwise) | Header with the client IP set by the edge proxy. The auth rate limiter keys on it (first value, must parse as an IP) and falls back to `req.ip` when it's missing/invalid. **Only safe if the edge proxy rejects/overwrites client-supplied values**: on Render, Cloudflare answers 403 (error 1000) to a client-sent `CF-Connecting-IP`. `True-Client-IP`, `X-Real-IP`, `CF-Connecting-IPv6`, `X-Forwarded-For`, `Forwarded` are forgeable there or not a single IP, so they **refuse to start**. `none` = no header, key on `req.ip` (any `NODE_ENV`). An empty value counts as unset. Not production by default locally because nothing strips a forged header there |
+| `RATE_LIMIT_DEBUG` | no (`1` to enable) | Logs one `[ratelimit-debug]` line per auth request with the XFF entry count, whether `CLIENT_IP_HEADER` was present and which key source was used. **Never logs IPs.** For verifying the proxy topology; turn off afterwards |
+| `IPDEBUG` | no (`1` to enable) — **TEMP, DEF-001, remove after the Render check** | Enables `[ipdebug]` logging on `GET /health?ipdebug=1`: XFF entry count, which headers are present, where values match each other / the tester's IP (`X-IPDebug-Expect` request header), and 8-hex per-boot HMAC fingerprints. **Never logs or returns an IP**; the `/health` response doesn't change. Procedure: project `handoffs/DEF-001.md` |
 | `MONGOMS_DOWNLOAD_DIR` | tests only, optional | Where the test mongod binary is cached (first `npm test` downloads ~180 MB) |
 
 ## API (locked contract — see project `context/interface-contracts.md`)
 
 All errors: `{ "error": { "code", "message", "field?" } }`.
 
-Rate limits (hardening): `/auth/login` and `/auth/signup` each allow 20 requests / 15 min per IP (`trust proxy` 1). Over the limit → **429** `{ error: { code: 'RATE_LIMITED', message } }` with `RateLimit*` headers and `Retry-After` = whole seconds until the window resets. Socket `message:send` allows 10 / 10 s per socket; over → ack `{ ok:false, error:{ code:'RATE_LIMITED', message, retryAfterMs } }` (integer ms until that socket can send again). `X-Powered-By` is disabled. Socket.IO keepalive: `pingInterval` 20000, `pingTimeout` 25000.
+Rate limits (hardening): `/auth/login` and `/auth/signup` have **separate** budgets of 20 requests / 15 min per client IP (DEF-001). The client IP is `CLIENT_IP_HEADER` if set and valid, otherwise `req.ip` under `trust proxy` = `TRUST_PROXY_HOPS`. Production defaults: `CF-Connecting-IP`, falling back to `req.ip` with trust proxy 3; dev/test defaults: no header, trust proxy 1; a forged `X-Forwarded-For` cannot change the key under either mode. Counters are in memory (per instance, reset on restart). Over the limit → **429** `{ error: { code: 'RATE_LIMITED', message } }` with `RateLimit*` headers and `Retry-After` = whole seconds until the window resets. CORS runs before the limiters, so cross-origin 429s carry `Access-Control-Allow-Origin`, and `Access-Control-Expose-Headers: Retry-After` lets the web client read it. Socket `message:send` allows 10 / 10 s per socket; over → ack `{ ok:false, error:{ code:'RATE_LIMITED', message, retryAfterMs } }` (integer ms until that socket can send again). `X-Powered-By` is disabled. Socket.IO keepalive: `pingInterval` 20000, `pingTimeout` 25000.
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
@@ -49,6 +53,7 @@ Socket.IO: `io(API_URL, { auth: { token } })`; bad/missing token → `connect_er
 - **Build:** `npm install`
 - **Start:** `npm start`
 - Env: `PORT` (injected), `MONGODB_URI`, `JWT_SECRET`, `CLIENT_ORIGINS`
+- Client IP behind Render (+ Cloudflare): with `NODE_ENV=production` the defaults are already `CF-Connecting-IP` + trust proxy 3. **If `NODE_ENV` isn't `production` on the service, those defaults don't apply**: set `NODE_ENV=production`, or set `TRUST_PROXY_HOPS=3` and `CLIENT_IP_HEADER=CF-Connecting-IP` explicitly. `IPDEBUG=1` (TEMP) and `/health?ipdebug=1` verify this; see project `handoffs/DEF-001.md`.
 
 ## Local
 

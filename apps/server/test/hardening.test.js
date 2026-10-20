@@ -65,13 +65,16 @@ describe('auth rate limits (429 RATE_LIMITED)', () => {
     assert.ok(Number.isInteger(ra) && ra >= 1 && ra <= 60, `Retry-After=${res.headers['retry-after']}`);
   });
 
-  it('trust proxy 1: limit is per client IP from X-Forwarded-For', async () => {
+  // Dev/test default is trust proxy 1 with no client-IP header; production
+  // defaults (3 + CF-Connecting-IP) are covered in ratelimit-ip.test.js (DEF-001).
+  it('dev default trust proxy 1: limit is per client IP from X-Forwarded-For', async () => {
     const res = await request(srv.app)
       .post('/auth/login')
       .set('X-Forwarded-For', '203.0.113.7')
       .send({ identifier: 'nobody', password: 'password123' });
     assert.equal(res.status, 401, 'a different client IP has its own budget');
-    assert.equal(srv.app.get('trust proxy'), 1);
+    assert.equal(srv.app.get('trust proxy'), 1, 'dev/test default (NODE_ENV unset)');
+    assert.equal(srv.config.clientIpHeader, '', 'no client-IP header outside production');
   });
 
   it('other routes are not limited', async () => {
