@@ -30,16 +30,6 @@ export function FormError({ message }) {
   );
 }
 
-/** Shown after SLOW_THRESHOLD_MS (4s) on any request or connect (Render cold start, R-4). */
-export const WAKING_TEXT = 'Waking server…';
-export function WakingHint({ children }) {
-  return (
-    <p className="hint" role="status" data-testid="waking-hint">
-      {children || `${WAKING_TEXT} The free server sleeps when idle and can take up to a minute to start.`}
-    </p>
-  );
-}
-
 /** Polite live status line (loading text etc.). */
 export function Status({ children, className = 'muted', ...rest }) {
   return (

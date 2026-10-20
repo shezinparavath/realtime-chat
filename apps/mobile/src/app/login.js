@@ -5,7 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import { AuthScreen } from '../components/AuthScreen';
 import { useRateLimitLock } from '../hooks/useRateLimitLock';
 import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit';
-import { Banner, Button, Field, FormError, RateLimitCountdown, WakingHint, s } from '../components/ui';
+import { Banner, Button, Field, FormError, RateLimitCountdown, SlowState, s } from '../components/ui';
 import { normalizeIdentifier, serverErrorToFormErrors, validateLogin, withRetry } from '../lib/validation';
 
 export default function LoginScreen() {
@@ -74,15 +74,16 @@ export default function LoginScreen() {
       />
       {rateLock.locked ? <RateLimitCountdown message={rateLock.message} /> : <FormError message={errors._form} />}
       {errors._retry && !rateLock.locked ? <Button title="Retry" variant="secondary" onPress={onSubmit} testID="login-retry" style={{ marginBottom: 8 }} /> : null}
-      {submitting && slow ? <WakingHint /> : null}
       <Button
-        title={submitting ? (slow ? 'Waking server…' : 'Logging in…') : 'Log in'}
+        title={submitting ? 'Logging in…' : 'Log in'}
         onPress={onSubmit}
         disabled={submitting || rateLock.locked}
         busy={submitting}
         accessibilityLabel={rateLock.locked ? `Log in, disabled: ${RATE_LIMITED_MESSAGE}` : undefined}
         testID="login-submit"
       />
+      {/* RTC-UI-01: label stays static; SlowState appears below the button after 4 s. */}
+      {submitting ? <SlowState show={slow} variant="inline" /> : null}
       <View style={{ flexDirection: 'row', marginTop: 16, alignItems: 'center' }}>
         <Text style={s.muted}>No account? </Text>
         <Link href="/signup" replace onPress={() => clearNotice()} accessibilityRole="link" testID="to-signup">

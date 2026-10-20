@@ -5,7 +5,7 @@
   line-height: 1.5;
 }
 body { margin: 0; }
-main { max-width: 640px; margin: 0 auto; padding: 16px 16px 72px; }
+main { max-width: 640px; margin: 0 auto; padding: 16px; }
 h2 { font-size: 1.1rem; display: flex; align-items: center; gap: 8px; margin-top: 0; }
 a { color: #0969da; }
 .app-header { display: flex; justify-content: space-between; align-items: center; max-width: 640px; margin: 0 auto; padding: 16px 16px 0; }
@@ -18,12 +18,8 @@ label { font-weight: 600; font-size: 0.9rem; }
 input { font: inherit; padding: 8px 10px; border: 1px solid #d0d7de; border-radius: 6px; width: 100%; box-sizing: border-box; }
 input[aria-invalid='true'] { border-color: #cf222e; }
 input:disabled { background: #f6f8fa; }
-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 8px 0 0; }
-dt { font-weight: 600; }
-dd { margin: 0; word-break: break-all; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
 .muted { color: #656d76; }
-.hint { color: #9a6700; }
 .error { color: #cf222e; }
 .form-error { margin: 0 0 12px; }
 .form-error > p { margin: 0; }
@@ -32,19 +28,12 @@ button:hover:not(:disabled) { background: #eef1f4; }
 button:disabled { opacity: 0.6; cursor: default; }
 button.primary { background: #1f883d; border-color: #1a7f37; color: #fff; width: 100%; padding: 8px 14px; }
 button.primary:hover:not(:disabled) { background: #1a7f37; }
-button.link { border: none; background: none; padding: 0; color: inherit; font-size: inherit; }
 .search-results { margin-top: 12px; }
 .user-list { list-style: none; margin: 0; padding: 0; }
 .user-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid #eaeef2; }
 .user-list li:first-child { border-top: none; }
 .username { font-weight: 600; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.status-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #d0d7de; padding: 6px 16px; font-size: 0.8rem; color: #656d76; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.status-details { flex-basis: 100%; font-size: 0.8rem; }
-.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #8c959f; vertical-align: middle; }
-.dot-ok, .dot-connected { background: #1a7f37; }
-.dot-loading, .dot-connecting, .dot-reconnecting { background: #bf8700; }
-.dot-error, .dot-unauthorized, .dot-disconnected { background: #cf222e; }
 .banner { background: #fff8c5; border: 1px solid #d4a72c; color: #7d4e00; border-radius: 6px; padding: 8px 12px; margin: 0 0 12px; }
 .reconnecting-bar { position: sticky; top: 0; z-index: 10; background: #fff8c5; color: #7d4e00; border-bottom: 1px solid #d4a72c; font-size: 0.8rem; text-align: center; padding: 2px 8px; }
 .chat-list { list-style: none; margin: 0; padding: 0; }
@@ -80,3 +69,16 @@ textarea[aria-invalid='true'] { border-color: #cf222e; }
 .send:hover:not(:disabled) { background: #1a7f37 !important; }
 .stale-notice { display: flex; align-items: center; gap: 8px; background: #fff8c5; border: 1px solid #d4a72c; color: #7d4e00; border-radius: 6px; padding: 4px 10px; margin: 0 0 8px; font-size: 0.85rem; }
 .stale-notice .link-btn:disabled { opacity: 0.6; cursor: default; }
+/* RTC-UI-01: SlowState (spec §2A). Colours move to tokens in RTC-UI-02. */
+.spinner { display: inline-block; flex-shrink: 0; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid #e1e4e8; border-top-color: #1d4ed8; border-radius: 50%; animation: spin 0.8s linear infinite; }
+.spinner-lg { width: 24px; height: 24px; border-width: 3px; }
+.spinner-btn { border-color: rgba(255, 255, 255, 0.45); border-top-color: #fff; margin-right: 8px; vertical-align: -3px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.slow-state-block { display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 320px; margin: 0 auto; padding: 24px; }
+.slow-state-block .spinner { margin-bottom: 12px; }
+.slow-title { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: #1d1f23; }
+.slow-body { margin: 4px 0 0; font-size: 14px; line-height: 20px; color: #5b6270; }
+.slow-state-inline { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 13px; line-height: 18px; color: #5b6270; }
+form .slow-state-inline { margin-top: 4px; }
+.composer-notice { margin: 0 0 4px; font-size: 12px; line-height: 16px; }
+.composer-notice .slow-state-inline { padding: 0; font-size: 12px; line-height: 16px; }

@@ -1,14 +1,13 @@
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { API_URL, API_URL_MISSING } from '../config';
+import { StyleSheet, Text, View } from 'react-native';
 import { useSocketContext } from '../socket/SocketContext';
-import { useHealth } from '../useHealth';
 import { colors } from '../theme';
-import { Button } from './ui';
 
 /**
  * LOCKED ruling P4-6: thin "Reconnecting…" bar whenever the socket isn't connected after the
  * first successful connect (no separate offline detection).
+ * RTC-UI-01: the debug footer (live status, Connection details, backend URL, transport, Reconnect)
+ * is removed per Jain's ruling; this bar is now the only visible connection UI. The manual
+ * Reconnect lives in the composer notice (spec §2A / §7.4).
  */
 export function ReconnectingBar() {
   const { status, everConnected } = useSocketContext();
@@ -21,70 +20,26 @@ export function ReconnectingBar() {
 }
 
 /**
- * Small connection footer; tap for details. Shows "Waking server…" on cold start.
- * Rulings: stale data UX #2: the status is driven ONLY by the live socket state (the same
- * useSocketContext source as the Reconnecting… bar), so it can never say ok while disconnected.
- * The Phase 1 one-time "API ok" health label is gone; GET /health still fires once on mount, only to
- * wake a sleeping Render instance and show the waking hint while it's slow.
+ * Tester hook (rulings: UI polish Q1): zero-size, not visible, hidden from TalkBack. QA reads the live
+ * socket state from testID="socket-status" (its accessibilityLabel / content-desc is the status).
  */
-export function ConnectionFooter({ showSocket }) {
-  const health = useHealth();
-  const sock = useSocketContext();
-  const [open, setOpen] = useState(false);
-  if (API_URL_MISSING) {
-    return (
-      <View style={st.footer}>
-        <Text style={[st.footerText, { color: colors.error }]}>EXPO_PUBLIC_API_URL is not set.</Text>
-      </View>
-    );
-  }
-  const waking = (health.state === 'loading' && health.slow) || (showSocket && sock.status === 'connecting' && sock.slow);
+export function SocketStatusHook() {
+  const { status } = useSocketContext();
   return (
-    <View style={st.footer} testID="status-bar">
-      <View style={st.footerRow}>
-        <Pressable
-          onPress={() => setOpen((o) => !o)}
-          accessibilityRole="button"
-          accessibilityLabel="Connection status details"
-          accessibilityState={{ expanded: open }}
-        >
-          <Text style={st.footerText}>
-            {showSocket ? (
-              <>
-                <Text style={{ color: dot(sock.status) }}>●</Text> live <Text testID="socket-status">{sock.status}</Text>
-              </>
-            ) : (
-              'Connection details'
-            )}
-          </Text>
-        </Pressable>
-        {showSocket && (sock.status === 'error' || sock.status === 'disconnected') && (
-          <Button title="Reconnect" variant="link" onPress={sock.reconnect} accessibilityLabel="Reconnect live connection" testID="socket-reconnect" />
-        )}
-      </View>
-      <View accessibilityLiveRegion="polite">{waking ? <Text style={st.waking} testID="statusbar-waking">Waking server… this can take up to a minute.</Text> : null}</View>
-      {open && (
-        <Text style={st.details} selectable>
-          backend {API_URL}
-          {showSocket ? `\nsocket ${sock.status}${sock.transport ? ` · ${sock.transport}` : ''}${sock.reconnectAttempt ? ` · attempt ${sock.reconnectAttempt}` : ''}${sock.lastError && sock.status !== 'connected' ? ` · ${sock.lastError}` : ''}` : ''}
-        </Text>
-      )}
-    </View>
+    <View
+      style={st.hook}
+      testID="socket-status"
+      accessibilityLabel={status}
+      importantForAccessibility="no-hide-descendants"
+      accessibilityElementsHidden
+      collapsable={false}
+      pointerEvents="none"
+    />
   );
-}
-
-function dot(state) {
-  if (state === 'connected') return colors.ok;
-  if (state === 'error' || state === 'unauthorized' || state === 'disconnected') return colors.error;
-  return colors.hint;
 }
 
 const st = StyleSheet.create({
   reconnecting: { backgroundColor: colors.hintBg, paddingVertical: 4, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#f0d9a0' },
   reconnectingText: { color: colors.hint, fontSize: 13, fontWeight: '600' },
-  footer: { borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.card },
-  footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  footerText: { color: colors.muted, fontSize: 12 },
-  waking: { color: colors.hint, fontSize: 12, marginTop: 2 },
-  details: { color: colors.muted, fontSize: 11, marginTop: 4 },
+  hook: { position: 'absolute', top: 0, left: 0, width: 0, height: 0, overflow: 'hidden' },
 });

@@ -9,7 +9,8 @@ import { validateMessageText } from '../../chats/chatStore';
 import { buildThreadItems } from '../../chats/threadItems';
 import { ReconnectingBar } from '../../components/ConnectionBars';
 import { KeyboardAvoider } from '../../components/KeyboardAvoider';
-import { Button, ErrorBlock, StaleNotice, Status, WakingHint, s } from '../../components/ui';
+import { Button, ErrorBlock, SlowState, StaleNotice, Status, s } from '../../components/ui';
+import { failedText } from '../../chats/messageUtils';
 import { useCountdown } from '../../hooks/useCountdown';
 import { rateLimitedMessage } from '../../lib/rateLimit';
 import { MAX_MESSAGE_LENGTH } from '../../config';
@@ -77,15 +78,17 @@ function ChatScreen() {
       <KeyboardAvoider testID="chat-keyboard-avoider">
         {meta.state === 'loading' && !chat && (
           <View style={st.pad}>
-            <Status spinner testID="chat-loading">
-              Loading chat…
-            </Status>
-            {listState.slow && <WakingHint />}
+            {!listState.slow ? (
+              <Status spinner testID="chat-loading">
+                Loading chat…
+              </Status>
+            ) : null}
+            <SlowState show={!!listState.slow} variant="block" />
           </View>
         )}
         {meta.state === 'error' && !chat && (
           <View style={st.pad}>
-            <ErrorBlock message={`Could not load this chat: ${meta.error}`} onRetry={() => setAttempt((n) => n + 1)} testID="chat-error" retryTestID="chat-retry" />
+            <ErrorBlock message={`Couldn't load this chat. ${meta.error}`} onRetry={() => setAttempt((n) => n + 1)} testID="chat-error" retryTestID="chat-retry" />
           </View>
         )}
         {notFound && (
@@ -106,7 +109,7 @@ function ChatScreen() {
           <>
             {thread?.status === 'ok' && thread.stale && <StaleNotice onRetry={() => loadNewest(chatId, { refresh: true })} testID="thread-stale" />}
             <Thread chatId={chatId} meId={user?.id} otherName={other?.username} />
-            <Composer chatId={chatId} />
+            <Composer chatId={chatId} suppressSlow={!!(thread && ((thread.status === 'loading' && thread.slow) || (thread.olderLoading && thread.olderSlow)))} />
           </>
         )}
       </KeyboardAvoider>
@@ -126,17 +129,20 @@ function Thread({ chatId, meId, otherName }) {
   if (!t || t.status === 'loading') {
     return (
       <View style={[st.pad, { flex: 1 }]}>
-        <Status spinner testID="thread-loading">
-          Loading messages…
-        </Status>
-        {t?.slow && <WakingHint />}
+        {/* SlowState block replaces the loading line after 4 s (skeleton bubbles: UI-06). */}
+        {!t?.slow ? (
+          <Status spinner testID="thread-loading">
+            Loading messages…
+          </Status>
+        ) : null}
+        <SlowState show={!!t?.slow} variant="block" />
       </View>
     );
   }
   if (t.status === 'error') {
     return (
       <View style={[st.pad, { flex: 1 }]}>
-        <ErrorBlock message={`Could not load messages: ${t.error}`} onRetry={() => loadNewest(chatId)} testID="thread-error" retryTestID="thread-retry" />
+        <ErrorBlock message={`Couldn't load messages. ${t.error}`} onRetry={() => loadNewest(chatId)} testID="thread-error" retryTestID="thread-retry" />
       </View>
     );
   }
@@ -172,14 +178,16 @@ function Thread({ chatId, meId, otherName }) {
           <View style={{ paddingVertical: 8, alignItems: 'center' }}>
             {t.olderLoading && (
               <>
-                <Status spinner testID="older-loading">
-                  Loading older messages…
-                </Status>
-                {t.olderSlow && <WakingHint />}
+                {!t.olderSlow ? (
+                  <Status spinner testID="older-loading">
+                    Loading older messages…
+                  </Status>
+                ) : null}
+                <SlowState show={!!t.olderSlow} variant="inline" />
               </>
             )}
             {t.olderError ? (
-              <ErrorBlock message={`Could not load older messages: ${t.olderError}`} onRetry={() => loadOlder(chatId)} testID="older-error" retryTestID="older-retry" />
+              <ErrorBlock message="Couldn't load older messages." onRetry={() => loadOlder(chatId)} testID="older-error" retryTestID="older-retry" />
             ) : null}
             {!t.hasMore && (t.messages?.length || 0) > 0 && (
               <Text style={s.small} testID="thread-beginning">
@@ -239,10 +247,10 @@ function PendingBubble({ p, onRetry, onDiscard }) {
         <View>
           {/* Announced once (static reason); the visible text may tick down every second. */}
           <View accessibilityLiveRegion="assertive" style={st.srOnly}>
-            <Text accessibilityRole="alert">Failed{p.error ? `: ${p.error}` : ''}</Text>
+            <Text accessibilityRole="alert">{failedText(p.error)}</Text>
           </View>
           <Text style={[st.meta, { color: colors.error }]} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden testID="failed-meta">
-            Failed{error ? `: ${error}` : ''}
+            {failedText(error)}
           </Text>
           <View style={{ flexDirection: 'row', gap: 16, justifyContent: 'flex-end', marginTop: 2 }}>
             {p.retryable && (
@@ -263,9 +271,9 @@ function PendingBubble({ p, onRetry, onDiscard }) {
   );
 }
 
-function Composer({ chatId }) {
+function Composer({ chatId, suppressSlow = false }) {
   const { sendMessage } = useChats();
-  const { status: socketStatus, slow: socketSlow } = useSocketContext();
+  const { status: socketStatus, slow: socketSlow, reconnect } = useSocketContext();
   const offline = socketStatus !== 'connected';
   const [text, setText] = useState('');
   const [error, setError] = useState(null);
@@ -288,14 +296,25 @@ function Composer({ chatId }) {
   const sendDisabledReason = over ? 'Message is too long' : blank ? 'Type a message to send' : null;
   return (
     <View style={st.composer}>
+      {/* RTC-UI-01 (spec §7.4): muted notice, no yellow box (the Reconnecting bar carries the warning).
+          Mobile's manual Reconnect moved here from the removed footer (error / disconnected only). */}
       {offline && (
-        <Text style={[s.hint, { marginTop: 0 }]} accessibilityLiveRegion="polite" testID="composer-offline">
-          {socketStatus === 'connecting' && !socketSlow
-            ? 'Connecting…'
-            : socketStatus === 'connecting'
-              ? 'Waking server… Messages can be sent once connected.'
-              : 'Reconnecting… Messages sent now will fail and can be retried.'}
-        </Text>
+        <View style={st.notice} accessibilityLiveRegion="polite" testID="composer-offline">
+          {socketStatus === 'connecting' && socketSlow && !suppressSlow ? (
+            <SlowState show variant="inline" live={false} />
+          ) : (
+            <Text style={st.noticeText}>
+              {socketStatus === 'connecting'
+                ? 'Connecting…'
+                : socketStatus === 'error' || socketStatus === 'disconnected'
+                  ? "Can't connect right now. Messages you send will fail and can be retried."
+                  : 'Messages sent now will fail and can be retried.'}
+            </Text>
+          )}
+          {socketStatus === 'error' || socketStatus === 'disconnected' ? (
+            <Button title="Reconnect" variant="link" onPress={reconnect} accessibilityLabel="Reconnect" testID="socket-reconnect" />
+          ) : null}
+        </View>
       )}
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
         <TextInput
@@ -344,4 +363,6 @@ const st = StyleSheet.create({
   meta: { fontSize: 11, color: colors.muted, marginTop: 2, alignSelf: 'flex-end' },
   composer: { borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.card, padding: 8 },
   composerInput: { flex: 1, maxHeight: 140, minHeight: 44 },
+  notice: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 8, marginBottom: 4 },
+  noticeText: { flexShrink: 1, fontSize: 12, lineHeight: 16, color: colors.muted },
 });

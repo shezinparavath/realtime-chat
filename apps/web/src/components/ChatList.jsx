@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { otherParticipant, useChats } from '../chats/ChatsContext.jsx';
 import { chatPath } from '../router.js';
-import { ErrorBlock, StaleNotice, WakingHint } from './Field.jsx';
+import { ErrorBlock, StaleNotice } from './Field.jsx';
+import { SlowState } from './SlowState.jsx';
 import { formatTime } from './time.js';
 
 /**
@@ -10,7 +11,7 @@ import { formatTime } from './time.js';
  * Preview: one line, CSS ellipsis, full text from the server (ruling P3-7); "No messages yet" for
  * lastMessage null (ruling P3-8).
  */
-export function ChatList() {
+export function ChatList({ suppressSlow = false }) {
   const { user } = useAuth();
   const { sortedChats, listState, loadChats } = useChats();
 
@@ -26,14 +27,17 @@ export function ChatList() {
       {listState.status === 'ok' && listState.stale && <StaleNotice onRetry={() => loadChats({ background: true })} testId="chats-stale" />}
       {showLoading && (
         <>
-          <p className="muted" role="status" data-testid="chats-loading">
-            Loading chats…
-          </p>
-          {listState.slow && <WakingHint />}
+          {/* RTC-UI-01: SlowState block above the loading placeholder after 4 s (skeleton rows: UI-06). */}
+          <SlowState show={listState.slow && !suppressSlow} variant="block" />
+          {!(listState.slow && !suppressSlow) && (
+            <p className="muted" role="status" data-testid="chats-loading">
+              Loading chats…
+            </p>
+          )}
         </>
       )}
       {listState.status === 'error' && (
-        <ErrorBlock message={`Could not load chats: ${listState.error}`} onRetry={() => loadChats().catch(() => {})} testId="chats-error" />
+        <ErrorBlock message={`Couldn't load chats. ${listState.error}`} onRetry={() => loadChats().catch(() => {})} testId="chats-error" />
       )}
       {listState.status === 'ok' && sortedChats.length === 0 && (
         <p className="muted" role="status" data-testid="chats-empty">

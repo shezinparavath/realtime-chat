@@ -5,7 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import { AuthScreen } from '../components/AuthScreen';
 import { useRateLimitLock } from '../hooks/useRateLimitLock';
 import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit';
-import { Button, Field, FormError, RateLimitCountdown, WakingHint, s } from '../components/ui';
+import { Button, Field, FormError, RateLimitCountdown, SlowState, s } from '../components/ui';
 import {
   PASSWORD_MAX,
   PASSWORD_MIN,
@@ -100,15 +100,16 @@ export default function SignupScreen() {
       />
       {rateLock.locked ? <RateLimitCountdown message={rateLock.message} /> : <FormError message={errors._form} />}
       {errors._retry && !rateLock.locked ? <Button title="Retry" variant="secondary" onPress={onSubmit} testID="signup-retry" style={{ marginBottom: 8 }} /> : null}
-      {submitting && slow ? <WakingHint /> : null}
       <Button
-        title={submitting ? (slow ? 'Waking server…' : 'Creating account…') : 'Sign up'}
+        title={submitting ? 'Creating account…' : 'Sign up'}
         onPress={onSubmit}
         disabled={submitting || rateLock.locked}
         busy={submitting}
         accessibilityLabel={rateLock.locked ? `Sign up, disabled: ${RATE_LIMITED_MESSAGE}` : undefined}
         testID="signup-submit"
       />
+      {/* RTC-UI-01: label stays static; SlowState appears below the button after 4 s. */}
+      {submitting ? <SlowState show={slow} variant="inline" /> : null}
       <View style={{ flexDirection: 'row', marginTop: 16, alignItems: 'center' }}>
         <Text style={s.muted}>Already have an account? </Text>
         <Link href="/login" replace accessibilityRole="link" testID="to-login">
