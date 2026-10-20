@@ -51,7 +51,7 @@ function HomeScreen() {
             value={input}
             onChangeText={setInput}
             placeholder="Search by username…"
-            placeholderTextColor={colors.muted}
+            placeholderTextColor={colors.textMuted}
             accessibilityLabel="Search by username"
             autoCapitalize="none"
             autoCorrect={false}
@@ -155,7 +155,7 @@ function SearchResults({ input }) {
                 <Text style={st.username}>@{u.username}</Text>
                 {opening === u.id ? <SlowState show={openSlow} variant="inline" /> : null}
                 {openError?.userId === u.id ? (
-                  <Text style={[s.small, { color: colors.error }]} accessibilityLiveRegion="assertive">
+                  <Text style={[s.small, { color: colors.danger }]} accessibilityLiveRegion="assertive">
                     Couldn't open chat.
                   </Text>
                 ) : null}
@@ -251,7 +251,7 @@ function ChatList() {
                 onPress={() => router.push({ pathname: '/chat/[id]', params: { id: c.id } })}
                 accessibilityRole="button"
                 accessibilityLabel={`Chat with @${other?.username ?? 'unknown'}. ${preview}`}
-                style={({ pressed }) => [st.chatRow, pressed && { backgroundColor: '#eef1f6' }]}
+                style={({ pressed }) => [st.chatRow, pressed && { backgroundColor: colors.surfaceMuted }]}
                 testID={`chat-row-${other?.username}`}
               >
                 <View style={st.chatRowTop}>
@@ -260,7 +260,7 @@ function ChatList() {
                   </Text>
                   <Text style={s.small}>{formatTime(c.updatedAt)}</Text>
                 </View>
-                <Text style={[st.preview, !c.lastMessage && { color: colors.muted, fontStyle: 'italic' }]} numberOfLines={1} ellipsizeMode="tail" testID="chat-preview">
+                <Text style={[st.preview, !c.lastMessage && { color: colors.textMuted, fontStyle: 'italic' }]} numberOfLines={1} ellipsizeMode="tail" testID="chat-preview">
                   {preview}
                 </Text>
               </Pressable>
@@ -276,10 +276,10 @@ const st = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   searchBox: { padding: 12, paddingBottom: 4 },
   pad: { paddingHorizontal: 12, flex: 1 },
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: colors.muted, textTransform: 'uppercase', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4 },
+  sectionTitle: { fontSize: 13, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4 },
   userRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   username: { fontSize: 16, fontWeight: '600', color: colors.text, flexShrink: 1 },
-  chatRow: { paddingHorizontal: 12, paddingVertical: 12, backgroundColor: colors.card },
+  chatRow: { paddingHorizontal: 12, paddingVertical: 12, backgroundColor: colors.surface },
   chatRowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 2 },
   preview: { fontSize: 15, color: colors.text },
   sep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },

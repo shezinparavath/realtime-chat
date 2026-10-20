@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { useSocketContext } from '../socket/SocketContext';
-import { colors } from '../theme';
+import { colors, type } from '../theme';
 
 /**
  * LOCKED ruling P4-6: thin "Reconnecting…" bar whenever the socket isn't connected after the
@@ -39,7 +39,8 @@ export function SocketStatusHook() {
 }
 
 const st = StyleSheet.create({
-  reconnecting: { backgroundColor: colors.hintBg, paddingVertical: 4, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#f0d9a0' },
-  reconnectingText: { color: colors.hint, fontSize: 13, fontWeight: '600' },
+  // Spec §2A.2: 24 px, warningBg / warningText, 12/16 600 (behaviour unchanged, P4-6).
+  reconnecting: { backgroundColor: colors.warningBg, height: 24, alignItems: 'center', justifyContent: 'center' },
+  reconnectingText: { color: colors.warningText, ...type.caption, fontWeight: '600' },
   hook: { position: 'absolute', top: 0, left: 0, width: 0, height: 0, overflow: 'hidden' },
 });

@@ -46,7 +46,7 @@ function SlowContent({ variant }) {
 export function Status({ children, testID, spinner = false, style }) {
   return (
     <View style={[s.statusRow, style]} accessibilityLiveRegion="polite">
-      {spinner && <ActivityIndicator size="small" color={colors.muted} style={{ marginRight: 8 }} />}
+      {spinner && <ActivityIndicator size="small" color={colors.textMuted} style={{ marginRight: 8 }} />}
       <Text style={s.muted} testID={testID}>
         {children}
       </Text>
@@ -152,15 +152,17 @@ export function Button({ title, onPress, disabled, variant = 'primary', busy, te
         link ? s.linkBtn : s.btn,
         compact && s.btnCompact,
         !link && (primary ? s.btnPrimary : s.btnSecondary),
-        disabled && s.btnDisabled,
-        pressed && !disabled && { opacity: 0.7 },
+        // RTC-UI-02: token pressed / disabled states (no opacity fades).
+        pressed && !disabled && !link && (primary ? s.btnPrimaryPressed : s.btnSecondaryPressed),
+        pressed && !disabled && link && { opacity: 0.7 },
+        disabled && !busy && !link && s.btnDisabled, // busy keeps its normal look
         style,
       ]}
     >
       {busy && !link ? (
-        <ActivityIndicator size="small" color={primary ? colors.primaryText : colors.text} style={{ marginRight: 8 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden />
+        <ActivityIndicator size="small" color={primary ? colors.onPrimary : colors.text} style={{ marginRight: 8 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden />
       ) : null}
-      <Text style={[link ? s.linkText : primary ? s.btnPrimaryText : s.btnSecondaryText]}>{title}</Text>
+      <Text style={[link ? s.linkText : primary ? s.btnPrimaryText : s.btnSecondaryText, disabled && !busy && (link ? s.linkTextDisabled : s.btnDisabledText)]}>{title}</Text>
     </Pressable>
   );
 }
@@ -173,8 +175,8 @@ export function Field({ label, error, hint, testID, ...inputProps }) {
       <TextInput
         accessibilityLabel={label}
         accessibilityHint={error || hint}
-        style={[s.input, error && { borderColor: colors.error }]}
-        placeholderTextColor={colors.muted}
+        style={[s.input, error && { borderColor: colors.danger }]}
+        placeholderTextColor={colors.textMuted}
         autoCapitalize="none"
         autoCorrect={false}
         testID={testID}
@@ -182,7 +184,7 @@ export function Field({ label, error, hint, testID, ...inputProps }) {
       />
       {hint && !error ? <Text style={s.small}>{hint}</Text> : null}
       {error ? (
-        <Text style={[s.small, { color: colors.error }]} accessibilityLiveRegion="polite" testID={testID ? `${testID}-error` : undefined}>
+        <Text style={[s.small, { color: colors.danger }]} accessibilityLiveRegion="polite" testID={testID ? `${testID}-error` : undefined}>
           {error}
         </Text>
       ) : null}
@@ -191,31 +193,35 @@ export function Field({ label, error, hint, testID, ...inputProps }) {
 }
 
 export const s = StyleSheet.create({
-  muted: { color: colors.muted, fontSize: 15 },
-  small: { color: colors.muted, fontSize: 13, marginTop: 4 },
+  muted: { color: colors.textMuted, fontSize: 15 },
+  small: { color: colors.textMuted, fontSize: 13, marginTop: 4 },
   slowBlock: { alignItems: 'center', alignSelf: 'center', maxWidth: 320, padding: 24 },
   slowTitle: { marginTop: 12, fontSize: 16, lineHeight: 24, fontWeight: '600', color: colors.text, textAlign: 'center' },
-  slowBody: { marginTop: 4, fontSize: 14, lineHeight: 20, color: colors.muted, textAlign: 'center' },
+  slowBody: { marginTop: 4, fontSize: 14, lineHeight: 20, color: colors.textMuted, textAlign: 'center' },
   slowInline: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
-  slowLine: { flexShrink: 1, fontSize: 13, lineHeight: 18, color: colors.muted },
+  slowLine: { flexShrink: 1, fontSize: 13, lineHeight: 18, color: colors.textMuted },
   statusRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   errorBlock: { paddingVertical: 8, gap: 8, alignItems: 'flex-start' },
-  errorText: { color: colors.error, fontSize: 15 },
-  banner: { backgroundColor: colors.errorBg, borderRadius: 6, padding: 10, marginBottom: 12 },
-  bannerText: { color: colors.error, fontWeight: '600' },
+  errorText: { color: colors.danger, fontSize: 15 },
+  banner: { backgroundColor: colors.dangerBg, borderRadius: 6, padding: 10, marginBottom: 12 },
+  bannerText: { color: colors.danger, fontWeight: '600' },
   btn: { minHeight: 44, paddingHorizontal: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
   btnCompact: { minHeight: 36, paddingHorizontal: 12 },
   btnPrimary: { backgroundColor: colors.primary },
-  btnSecondary: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
-  btnDisabled: { opacity: 0.45 },
-  btnPrimaryText: { color: colors.primaryText, fontWeight: '600', fontSize: 16 },
+  btnSecondary: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong },
+  btnPrimaryPressed: { backgroundColor: colors.primaryPressed },
+  btnSecondaryPressed: { backgroundColor: colors.surfaceMuted },
+  btnDisabled: { backgroundColor: colors.disabledBg, borderColor: colors.disabledBg },
+  btnDisabledText: { color: colors.disabledText },
+  linkTextDisabled: { color: colors.disabledText },
+  btnPrimaryText: { color: colors.onPrimary, fontWeight: '600', fontSize: 16 },
   btnSecondaryText: { color: colors.text, fontWeight: '600', fontSize: 15 },
   linkBtn: { paddingVertical: 4, paddingHorizontal: 2 },
   linkText: { color: colors.primary, fontWeight: '600', fontSize: 15 },
   srOnly: { position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 },
-  stale: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.hintBg, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 2, marginHorizontal: 12, marginBottom: 6 },
-  staleText: { color: colors.hint, fontSize: 14, fontWeight: '600' },
+  stale: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.warningBg, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 2, marginHorizontal: 12, marginBottom: 6 },
+  staleText: { color: colors.warningText, fontSize: 14, fontWeight: '600' },
   field: { marginBottom: 12 },
   label: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 4 },
-  input: { borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, backgroundColor: colors.card, color: colors.text },
+  input: { borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, backgroundColor: colors.surface, color: colors.text },
 });

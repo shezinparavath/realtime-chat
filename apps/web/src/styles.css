@@ -1,84 +1,155 @@
+/* RTC-UI-02: design tokens (ui-polish-spec.md §4), light mode. Raw hex lives only in this :root block. */
 :root {
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  color: #1f2328;
-  background: #f6f8fa;
+  --color-bg: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-surface-muted: #e9ebf0;
+  --color-border: #e1e4e8; /* decorative dividers only */
+  --color-border-strong: #8b929d; /* input / control boundary */
+  --color-text: #1d1f23;
+  --color-text-muted: #5b6270;
+  --color-primary: #1d4ed8;
+  --color-primary-hover: #1e40af;
+  --color-primary-pressed: #1e3a8a;
+  --color-on-primary: #ffffff;
+  --color-on-primary-muted: #dbe6ff;
+  --color-primary-subtle: #eff4ff;
+  --color-danger: #b42318;
+  --color-danger-bg: #fdecea;
+  --color-warning-text: #7a4b00;
+  --color-warning-bg: #fff4d6;
+  --color-success: #2e7d32;
+  --color-disabled-bg: #e5e7eb;
+  --color-disabled-text: #4b5563;
+  --color-focus: #1d4ed8;
+  --avatar-1: #1d4ed8;
+  --avatar-2: #b42318;
+  --avatar-3: #2e7d32;
+  --avatar-4: #7c3aed;
+  --avatar-5: #0f766e;
+  --avatar-6: #be185d;
+
+  /* §4.2 type scale: size / line-height (px, matches mobile) */
+  --text-title-lg: 700 22px/28px var(--font);
+  --text-title: 600 18px/24px var(--font);
+  --text-body: 400 15px/22px var(--font);
+  --text-body-strong: 600 15px/22px var(--font);
+  --text-secondary: 400 14px/20px var(--font);
+  --text-caption: 400 12px/16px var(--font);
+  --text-badge: 700 11px/14px var(--font);
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* §4.3 spacing, §4.4 radii, §4.5 shadows */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 18px;
+  --radius-tail: 4px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.12);
+
+  font-family: var(--font);
+  color: var(--color-text);
+  background: var(--color-bg);
   line-height: 1.5;
 }
 body { margin: 0; }
 main { max-width: 640px; margin: 0 auto; padding: 16px; }
 h2 { font-size: 1.1rem; display: flex; align-items: center; gap: 8px; margin-top: 0; }
-a { color: #0969da; }
+a { color: var(--color-primary); }
+/* §11.3 focus visibility: 2 px focus outline, 2 px offset. */
+:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .app-header { display: flex; justify-content: space-between; align-items: center; max-width: 640px; margin: 0 auto; padding: 16px 16px 0; }
 .brand { font-weight: 700; font-size: 1.2rem; color: inherit; text-decoration: none; }
 .session { display: flex; align-items: center; gap: 12px; }
-.card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 16px; margin: 16px 0; }
+.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 16px; margin: 16px 0; }
 .auth-card { max-width: 400px; margin: 32px auto; }
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 label { font-weight: 600; font-size: 0.9rem; }
-input { font: inherit; padding: 8px 10px; border: 1px solid #d0d7de; border-radius: 6px; width: 100%; box-sizing: border-box; }
-input[aria-invalid='true'] { border-color: #cf222e; }
-input:disabled { background: #f6f8fa; }
+input { font: inherit; color: var(--color-text); background: var(--color-surface); padding: 8px 10px; border: 1px solid var(--color-border-strong); border-radius: 6px; width: 100%; box-sizing: border-box; }
+input::placeholder, textarea::placeholder { color: var(--color-text-muted); }
+input[aria-invalid='true'] { border-color: var(--color-danger); }
+input:disabled { background: var(--color-bg); }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
-.muted { color: #656d76; }
-.error { color: #cf222e; }
+.muted { color: var(--color-text-muted); }
+.error { color: var(--color-danger); }
 .form-error { margin: 0 0 12px; }
 .form-error > p { margin: 0; }
-button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #d0d7de; background: #f6f8fa; cursor: pointer; }
-button:hover:not(:disabled) { background: #eef1f4; }
-button:disabled { opacity: 0.6; cursor: default; }
-button.primary { background: #1f883d; border-color: #1a7f37; color: #fff; width: 100%; padding: 8px 14px; }
-button.primary:hover:not(:disabled) { background: #1a7f37; }
+button { font: inherit; color: var(--color-text); padding: 6px 14px; border-radius: 6px; border: 1px solid var(--color-border-strong); background: var(--color-surface); cursor: pointer; }
+button:hover:not(:disabled) { background: var(--color-surface-muted); }
+button:active:not(:disabled) { background: var(--color-surface-muted); }
+/* Disabled: token colours, no opacity fade (§13). Busy buttons keep their normal look. */
+button:disabled:not([aria-busy='true']) { background: var(--color-disabled-bg); border-color: var(--color-disabled-bg); color: var(--color-disabled-text); cursor: default; }
+button[aria-busy='true'] { cursor: progress; }
+button.primary { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); width: 100%; padding: 8px 14px; }
+button.primary:hover:not(:disabled) { background: var(--color-primary-hover); border-color: var(--color-primary-hover); }
+button.primary:active:not(:disabled) { background: var(--color-primary-pressed); border-color: var(--color-primary-pressed); }
 .search-results { margin-top: 12px; }
 .user-list { list-style: none; margin: 0; padding: 0; }
-.user-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid #eaeef2; }
+.user-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--color-border); }
 .user-list li:first-child { border-top: none; }
 .username { font-weight: 600; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.banner { background: #fff8c5; border: 1px solid #d4a72c; color: #7d4e00; border-radius: 6px; padding: 8px 12px; margin: 0 0 12px; }
-.reconnecting-bar { position: sticky; top: 0; z-index: 10; background: #fff8c5; color: #7d4e00; border-bottom: 1px solid #d4a72c; font-size: 0.8rem; text-align: center; padding: 2px 8px; }
+.banner { background: var(--color-warning-bg); color: var(--color-warning-text); border-radius: var(--radius-sm); padding: 8px 12px; margin: 0 0 12px; }
+/* §2A.2: Reconnecting bar, 24 px, warning tokens, 12/16 600. Behaviour unchanged (P4-6). */
+.reconnecting-bar { position: sticky; top: 0; z-index: 10; box-sizing: border-box; height: 24px; display: flex; align-items: center; justify-content: center; padding: 0 8px; background: var(--color-warning-bg); color: var(--color-warning-text); font: var(--text-caption); font-weight: 600; text-align: center; }
 .chat-list { list-style: none; margin: 0; padding: 0; }
-.chat-list li + li { border-top: 1px solid #eaeef2; }
+.chat-list li + li { border-top: 1px solid var(--color-border); }
 .chat-row { display: flex; flex-direction: column; gap: 2px; padding: 8px 4px; color: inherit; text-decoration: none; min-width: 0; }
-.chat-row:hover { background: #f6f8fa; }
+.chat-row:hover { background: var(--color-bg); }
+.chat-row:focus-visible { outline-offset: -2px; }
 .chat-row-top { display: flex; justify-content: space-between; gap: 8px; }
-.time { font-size: 0.75rem; white-space: nowrap; }
+.time { font: var(--text-caption); white-space: nowrap; }
 .preview { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.9rem; }
 .chat-card { display: flex; flex-direction: column; }
 .chat-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .chat-header h2 { margin: 0; }
-.thread { height: min(60vh, 520px); overflow-y: auto; border: 1px solid #eaeef2; border-radius: 6px; padding: 8px; background: #fafbfc; }
+.thread { height: min(60vh, 520px); overflow-y: auto; border: 1px solid var(--color-border); border-radius: 6px; padding: 8px; background: var(--color-bg); }
 .thread-status { text-align: center; margin: 4px 0; font-size: 0.85rem; }
 .messages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.bubble { max-width: 80%; padding: 6px 10px; border-radius: 10px; background: #fff; border: 1px solid #d0d7de; display: flex; flex-direction: column; }
-.bubble.mine { align-self: flex-end; background: #ddf4ff; border-color: #b6e3ff; }
+/* Bubbles: no border or shadow except Failed (§4.5). Shape / grouping is RTC-UI-04. */
+.bubble { max-width: 80%; padding: 6px 10px; border-radius: 10px; background: var(--color-surface-muted); color: var(--color-text); display: flex; flex-direction: column; }
+.bubble.mine { align-self: flex-end; background: var(--color-primary); color: var(--color-on-primary); }
 .bubble.theirs { align-self: flex-start; }
 .bubble .text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.bubble .meta { font-size: 0.7rem; color: #656d76; align-self: flex-end; }
+.bubble .meta { font: var(--text-caption); color: var(--color-text-muted); align-self: flex-end; }
+.bubble.mine .meta { color: var(--color-on-primary-muted); }
 .bubble.pending.sending { opacity: 0.7; }
-.bubble.pending.failed { border-color: #cf222e; background: #ffebe9; }
-.failed-meta { color: #cf222e !important; }
-.link-btn { border: none; background: none; padding: 0; color: #0969da; text-decoration: underline; font-size: inherit; cursor: pointer; }
+.bubble.pending.failed { border: 1px solid var(--color-danger); background: var(--color-danger-bg); color: var(--color-text); }
+.bubble.pending.failed .meta { color: var(--color-text-muted); }
+.failed-meta { color: var(--color-danger) !important; }
+.link-btn { border: none; background: none; padding: 0; color: var(--color-primary); text-decoration: underline; font-size: inherit; cursor: pointer; }
+.link-btn:hover:not(:disabled) { background: none; color: var(--color-primary-hover); }
+.link-btn:disabled:not([aria-busy='true']) { background: none; color: var(--color-disabled-text); }
 .composer { margin-top: 8px; }
-textarea { font: inherit; width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #d0d7de; border-radius: 6px; resize: vertical; }
-textarea[aria-invalid='true'] { border-color: #cf222e; }
+textarea { font: inherit; color: var(--color-text); background: var(--color-surface); width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--color-border-strong); border-radius: 6px; resize: vertical; }
+textarea[aria-invalid='true'] { border-color: var(--color-danger); }
 .composer-bar { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 .composer-bar .error { flex: 1; font-size: 0.8rem; }
-.counter { font-size: 0.75rem; color: #656d76; white-space: nowrap; }
-.counter.over { color: #cf222e; font-weight: 700; }
-.send { background: #1f883d; border-color: #1a7f37; color: #fff; }
-.send:hover:not(:disabled) { background: #1a7f37 !important; }
-.stale-notice { display: flex; align-items: center; gap: 8px; background: #fff8c5; border: 1px solid #d4a72c; color: #7d4e00; border-radius: 6px; padding: 4px 10px; margin: 0 0 8px; font-size: 0.85rem; }
-.stale-notice .link-btn:disabled { opacity: 0.6; cursor: default; }
-/* RTC-UI-01: SlowState (spec §2A). Colours move to tokens in RTC-UI-02. */
-.spinner { display: inline-block; flex-shrink: 0; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid #e1e4e8; border-top-color: #1d4ed8; border-radius: 50%; animation: spin 0.8s linear infinite; }
+.counter { font: var(--text-caption); color: var(--color-text-muted); white-space: nowrap; }
+.counter.over { color: var(--color-danger); font-weight: 700; }
+.send { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
+.send:hover:not(:disabled) { background: var(--color-primary-hover) !important; border-color: var(--color-primary-hover); }
+.send:active:not(:disabled) { background: var(--color-primary-pressed) !important; border-color: var(--color-primary-pressed); }
+.stale-notice { display: flex; align-items: center; gap: 8px; background: var(--color-warning-bg); color: var(--color-warning-text); border-radius: var(--radius-sm); padding: 4px 10px; margin: 0 0 8px; font-size: 0.85rem; }
+.stale-notice .link-btn:disabled:not([aria-busy='true']) { color: var(--color-disabled-text); }
+/* RTC-UI-01: SlowState (spec §2A). */
+.spinner { display: inline-block; flex-shrink: 0; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid var(--color-border); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
 .spinner-lg { width: 24px; height: 24px; border-width: 3px; }
-.spinner-btn { border-color: rgba(255, 255, 255, 0.45); border-top-color: #fff; margin-right: 8px; vertical-align: -3px; }
+.spinner-btn { border-color: var(--color-on-primary-muted); border-top-color: var(--color-on-primary); margin-right: 8px; vertical-align: -3px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .slow-state-block { display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 320px; margin: 0 auto; padding: 24px; }
 .slow-state-block .spinner { margin-bottom: 12px; }
-.slow-title { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: #1d1f23; }
-.slow-body { margin: 4px 0 0; font-size: 14px; line-height: 20px; color: #5b6270; }
-.slow-state-inline { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 13px; line-height: 18px; color: #5b6270; }
+.slow-title { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--color-text); }
+.slow-body { margin: 4px 0 0; font: var(--text-secondary); color: var(--color-text-muted); }
+.slow-state-inline { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 13px; line-height: 18px; color: var(--color-text-muted); }
 form .slow-state-inline { margin-top: 4px; }
-.composer-notice { margin: 0 0 4px; font-size: 12px; line-height: 16px; }
-.composer-notice .slow-state-inline { padding: 0; font-size: 12px; line-height: 16px; }
+.composer-notice { margin: 0 0 4px; font: var(--text-caption); }
+.composer-notice .slow-state-inline { padding: 0; font: var(--text-caption); }

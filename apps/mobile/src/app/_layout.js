@@ -46,7 +46,7 @@ function Root() {
     // One chat store per signed-in user: logging out or switching accounts starts clean.
     <ChatsProvider key={user?.id || 'anonymous'}>
       <StatusBar style="dark" />
-      <Stack screenOptions={{ headerStyle: { backgroundColor: colors.card }, headerTintColor: colors.text, contentStyle: { backgroundColor: colors.bg } }}>
+      <Stack screenOptions={{ headerStyle: { backgroundColor: colors.surface }, headerTintColor: colors.text, contentStyle: { backgroundColor: colors.bg } }}>
         <Stack.Protected guard={signedIn}>
           <Stack.Screen name="index" options={{ title: 'Chats' }} />
           <Stack.Screen name="chat/[id]" options={{ title: 'Chat' }} />
@@ -101,7 +101,7 @@ export function ErrorBoundary({ error, retry }) {
         <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text }} accessibilityRole="header">
           Something went wrong
         </Text>
-        <Text style={{ color: colors.error }} accessibilityRole="alert">
+        <Text style={{ color: colors.danger }} accessibilityRole="alert">
           {error?.message || String(error)}
         </Text>
         <Button title="Retry" onPress={retry} testID="boundary-retry" />
@@ -112,5 +112,5 @@ export function ErrorBoundary({ error, retry }) {
 
 const st = StyleSheet.create({
   gate: { backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
-  configError: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 8, backgroundColor: colors.errorBg, color: colors.error, textAlign: 'center' },
+  configError: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 8, backgroundColor: colors.dangerBg, color: colors.danger, textAlign: 'center' },
 });

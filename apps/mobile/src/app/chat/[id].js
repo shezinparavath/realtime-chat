@@ -16,7 +16,7 @@ import { rateLimitedMessage } from '../../lib/rateLimit';
 import { MAX_MESSAGE_LENGTH } from '../../config';
 import { formatTime } from '../../lib/time';
 import { useSocketContext } from '../../socket/SocketContext';
-import { colors } from '../../theme';
+import { colors, type } from '../../theme';
 
 /** Chat view: history (inverted list, older pages on scroll-up), pending bubbles, composer. */
 export default function ChatScreenRoute() {
@@ -218,10 +218,10 @@ function MessageBubble({ m, mine }) {
       testID="message"
       dataSet={{ messageId: m.id }}
     >
-      <Text style={[st.bubbleText, mine && { color: colors.mineText }]} selectable>
+      <Text style={[st.bubbleText, mine && { color: colors.onPrimary }]} selectable>
         {m.text}
       </Text>
-      <Text style={[st.meta, mine && { color: '#dbe6ff' }]}>{time}</Text>
+      <Text style={[st.meta, mine && { color: colors.onPrimaryMuted }]}>{time}</Text>
     </View>
   );
 }
@@ -238,9 +238,9 @@ function PendingBubble({ p, onRetry, onDiscard }) {
   const error = p.code === 'RATE_LIMITED' && wait > 0 ? rateLimitedMessage(wait) : p.error;
   return (
     <View style={[st.bubble, st.mine, !sending && st.failed, sending && { opacity: 0.7 }]} testID={`pending-${p.status}`}>
-      <Text style={[st.bubbleText, sending && { color: colors.mineText }]}>{p.text}</Text>
+      <Text style={[st.bubbleText, sending && { color: colors.onPrimary }]}>{p.text}</Text>
       {sending ? (
-        <Text style={[st.meta, { color: '#dbe6ff' }]} accessibilityLiveRegion="polite">
+        <Text style={[st.meta, { color: colors.onPrimaryMuted }]} accessibilityLiveRegion="polite">
           sending…
         </Text>
       ) : (
@@ -249,7 +249,7 @@ function PendingBubble({ p, onRetry, onDiscard }) {
           <View accessibilityLiveRegion="assertive" style={st.srOnly}>
             <Text accessibilityRole="alert">{failedText(p.error)}</Text>
           </View>
-          <Text style={[st.meta, { color: colors.error }]} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden testID="failed-meta">
+          <Text style={[st.meta, { color: colors.danger }]} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden testID="failed-meta">
             {failedText(error)}
           </Text>
           <View style={{ flexDirection: 'row', gap: 16, justifyContent: 'flex-end', marginTop: 2 }}>
@@ -324,11 +324,11 @@ function Composer({ chatId, suppressSlow = false }) {
             setError(null);
           }}
           placeholder="Write a message…"
-          placeholderTextColor={colors.muted}
+          placeholderTextColor={colors.textMuted}
           multiline
           accessibilityLabel="Message"
           accessibilityHint={inlineError || `${length} of ${MAX_MESSAGE_LENGTH} characters`}
-          style={[s.input, st.composerInput, over && { borderColor: colors.error }]}
+          style={[s.input, st.composerInput, over && { borderColor: colors.danger }]}
           testID="composer-input"
         />
         <Button
@@ -340,10 +340,10 @@ function Composer({ chatId, suppressSlow = false }) {
         />
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4, gap: 8 }}>
-        <Text style={[s.small, { marginTop: 0, flex: 1, color: colors.error }]} accessibilityLiveRegion="assertive" testID="composer-error">
+        <Text style={[s.small, { marginTop: 0, flex: 1, color: colors.danger }]} accessibilityLiveRegion="assertive" testID="composer-error">
           {inlineError || ''}
         </Text>
-        <Text style={[s.small, { marginTop: 0 }, over && { color: colors.error, fontWeight: '700' }]} testID="composer-counter">
+        <Text style={[s.small, { marginTop: 0 }, over && { color: colors.danger, fontWeight: '700' }]} testID="composer-counter">
           {length} / {MAX_MESSAGE_LENGTH}
         </Text>
       </View>
@@ -356,13 +356,13 @@ const st = StyleSheet.create({
   pad: { padding: 12 },
   srOnly: { position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 },
   bubble: { maxWidth: '82%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, marginVertical: 3 },
-  mine: { alignSelf: 'flex-end', backgroundColor: colors.mine },
-  theirs: { alignSelf: 'flex-start', backgroundColor: colors.theirs },
-  failed: { backgroundColor: colors.failedBg, borderWidth: 1, borderColor: colors.error },
+  mine: { alignSelf: 'flex-end', backgroundColor: colors.primary },
+  theirs: { alignSelf: 'flex-start', backgroundColor: colors.surfaceMuted },
+  failed: { backgroundColor: colors.dangerBg, borderWidth: 1, borderColor: colors.danger },
   bubbleText: { fontSize: 16, color: colors.text },
-  meta: { fontSize: 11, color: colors.muted, marginTop: 2, alignSelf: 'flex-end' },
-  composer: { borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.card, padding: 8 },
+  meta: { ...type.caption, color: colors.textMuted, marginTop: 2, alignSelf: 'flex-end' },
+  composer: { borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface, padding: 8 },
   composerInput: { flex: 1, maxHeight: 140, minHeight: 44 },
   notice: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 8, marginBottom: 4 },
-  noticeText: { flexShrink: 1, fontSize: 12, lineHeight: 16, color: colors.muted },
+  noticeText: { flexShrink: 1, fontSize: 12, lineHeight: 16, color: colors.textMuted },
 });
