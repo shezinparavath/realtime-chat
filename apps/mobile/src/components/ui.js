@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit';
-import { colors } from '../theme';
+import { colors, radius, type } from '../theme';
 
 /**
  * RTC-UI-01 (spec §2A): the one cold-start state, shown only after the existing 4 s slow threshold.
@@ -79,7 +79,8 @@ export function Banner({ children, testID }) {
 export function FormError({ message }) {
   if (!message) return null;
   return (
-    <Text style={[s.errorText, { marginVertical: 8 }]} accessibilityRole="alert" accessibilityLiveRegion="assertive" testID="form-error">
+    // RTC-UI-07 (spec §9): danger block above the submit.
+    <Text style={s.formError} accessibilityRole="alert" accessibilityLiveRegion="assertive" testID="form-error">
       {message}
     </Text>
   );
@@ -125,11 +126,11 @@ export function RateLimitCountdown({ message }) {
     AccessibilityInfo.announceForAccessibility?.(RATE_LIMITED_MESSAGE);
   }, []);
   return (
-    <View style={{ marginVertical: 8 }}>
+    <View>
       <Text style={s.srOnly} accessibilityRole="alert" testID="rate-limit-announce">
         {RATE_LIMITED_MESSAGE}
       </Text>
-      <Text style={s.errorText} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden aria-hidden testID="form-error">
+      <Text style={s.formError} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden aria-hidden testID="form-error">
         {message}
       </Text>
     </View>
@@ -168,27 +169,90 @@ export function Button({ title, onPress, disabled, variant = 'primary', busy, te
 }
 
 /** Labelled text input with inline error (announced) or hint. */
-export function Field({ label, error, hint, testID, ...inputProps }) {
+export function Field({ label, error, hint, testID, trailing, inputStyle, ...inputProps }) {
+  const input = (
+    <TextInput
+      accessibilityLabel={label}
+      accessibilityHint={error || hint}
+      style={[s.input, s.fieldInput, inputStyle, error && { borderColor: colors.danger }]}
+      placeholderTextColor={colors.textMuted}
+      autoCapitalize="none"
+      autoCorrect={false}
+      testID={testID}
+      {...inputProps}
+    />
+  );
   return (
     <View style={s.field}>
       <Text style={s.label}>{label}</Text>
-      <TextInput
-        accessibilityLabel={label}
-        accessibilityHint={error || hint}
-        style={[s.input, error && { borderColor: colors.danger }]}
-        placeholderTextColor={colors.textMuted}
-        autoCapitalize="none"
-        autoCorrect={false}
-        testID={testID}
-        {...inputProps}
-      />
-      {hint && !error ? <Text style={s.small}>{hint}</Text> : null}
+      {trailing ? (
+        <View style={s.inputWrap}>
+          {input}
+          {trailing}
+        </View>
+      ) : (
+        input
+      )}
+      {hint && !error ? <Text style={s.fieldHint}>{hint}</Text> : null}
       {error ? (
-        <Text style={[s.small, { color: colors.danger }]} accessibilityLiveRegion="polite" testID={testID ? `${testID}-error` : undefined}>
+        <Text style={[s.fieldHint, { color: colors.danger }]} accessibilityLiveRegion="polite" testID={testID ? `${testID}-error` : undefined}>
           {error}
         </Text>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * RTC-UI-07 (spec §9): password Field with a trailing "Show" / "Hide" toggle (pure JS). The toggle is a
+ * Pressable button (44 px tall, never submits), named "Show password" / "Hide password", with its state
+ * exposed (checked; aria-pressed on web). The value is controlled, so flipping secureTextEntry keeps the
+ * text. iOS clears a secure field on the next keystroke after it is re-secured; that first change is
+ * re-applied on top of the old value. `resetKey` changing (each submit) hides it again.
+ */
+export function PasswordField({ value, onChangeText, resetKey, editable = true, testID, ...props }) {
+  const [shown, setShown] = useState(false);
+  const resecured = useRef(false);
+  useEffect(() => {
+    setShown(false);
+  }, [resetKey]);
+  function toggle() {
+    if (shown) resecured.current = true;
+    setShown((v) => !v);
+  }
+  function change(next) {
+    if (Platform.OS === 'ios' && resecured.current) {
+      resecured.current = false;
+      if (value && next.length <= 1 && !next.startsWith(value)) return onChangeText(value + next);
+    }
+    resecured.current = false;
+    onChangeText(next);
+  }
+  const label = shown ? 'Hide password' : 'Show password';
+  return (
+    <Field
+      {...props}
+      value={value}
+      onChangeText={change}
+      editable={editable}
+      secureTextEntry={!shown}
+      testID={testID}
+      inputStyle={s.passwordInput}
+      trailing={
+        <Pressable
+          onPress={toggle}
+          disabled={!editable}
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityState={Platform.OS === 'web' ? { disabled: !editable } : { checked: shown, disabled: !editable }}
+          {...(Platform.OS === 'web' ? { 'aria-pressed': shown } : null)}
+          testID={testID ? `${testID}-toggle` : undefined}
+          style={s.pwToggle}
+        >
+          <Text style={[s.pwToggleText, !editable && { color: colors.disabledText }]}>{shown ? 'Hide' : 'Show'}</Text>
+        </Pressable>
+      }
+    />
   );
 }
 
@@ -203,8 +267,10 @@ export const s = StyleSheet.create({
   statusRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   errorBlock: { paddingVertical: 8, gap: 8, alignItems: 'flex-start' },
   errorText: { color: colors.danger, fontSize: 15 },
-  banner: { backgroundColor: colors.dangerBg, borderRadius: 6, padding: 10, marginBottom: 12 },
-  bannerText: { color: colors.danger, fontWeight: '600' },
+  // RTC-UI-07 (spec §9): session-expired banner in warning colours (P4-3).
+  banner: { backgroundColor: colors.warningBg, borderRadius: radius.sm, paddingVertical: 8, paddingHorizontal: 12, marginBottom: 16 },
+  bannerText: { ...type.secondary, color: colors.warningText, fontWeight: '600' },
+  formError: { ...type.secondary, color: colors.danger, backgroundColor: colors.dangerBg, borderRadius: radius.sm, paddingVertical: 8, paddingHorizontal: 12, marginBottom: 16, overflow: 'hidden' },
   btn: { minHeight: 44, paddingHorizontal: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
   btnCompact: { minHeight: 36, paddingHorizontal: 12 },
   btnPrimary: { backgroundColor: colors.primary },
@@ -221,7 +287,15 @@ export const s = StyleSheet.create({
   srOnly: { position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 },
   stale: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.warningBg, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 2, marginHorizontal: 12, marginBottom: 6 },
   staleText: { color: colors.warningText, fontSize: 14, fontWeight: '600' },
-  field: { marginBottom: 12 },
-  label: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 4 },
+  // RTC-UI-07 (spec §7.1): auth fields. Label 14/20 600, 6 px gap, 44 px input, 16 px between fields.
+  field: { marginBottom: 16 },
+  label: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: colors.text, marginBottom: 6 },
+  fieldInput: { height: 44, paddingVertical: 0, paddingHorizontal: 12, borderRadius: radius.md, fontSize: 16 }, // no lineHeight: Android mis-centres single-line inputs
+  fieldHint: { ...type.caption, color: colors.textMuted, marginTop: 4 },
+  inputWrap: { position: 'relative', justifyContent: 'center' },
+  passwordInput: { paddingRight: 64 },
+  authButton: { borderRadius: radius.md }, // RTC-UI-07: auth submit / Retry use radius-md (shared Button stays 8)
+  pwToggle: { position: 'absolute', right: 0, top: 0, height: 44, minWidth: 56, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
+  pwToggleText: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: colors.primary },
   input: { borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, backgroundColor: colors.surface, color: colors.text },
 });

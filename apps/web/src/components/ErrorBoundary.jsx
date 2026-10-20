@@ -20,7 +20,7 @@ export class ErrorBoundary extends Component {
     return (
       <main>
         <section className="card" role="alert">
-          <h2>Something went wrong</h2>
+          <h1 className="boundary-title">Something went wrong</h1>
           <p className="muted">The page hit an unexpected error. Reloading usually fixes it.</p>
           <button type="button" onClick={() => window.location.reload()}>
             Reload
