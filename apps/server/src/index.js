@@ -22,7 +22,6 @@ async function main() {
     `[config] client IP: trust proxy hops=${config.trustProxyHops} (${config.clientIpSource.trustProxyHops}), ` +
       `header=${config.clientIpHeader || '(none, req.ip)'} (${config.clientIpSource.clientIpHeader})`
   );
-  if (config.ipDebug) console.warn('[config] IPDEBUG=1: TEMP [ipdebug] logging on /health?ipdebug=1 is ON — remove after the DEF-001 check');
 
   await connectMongo(config.mongodbUri);
 

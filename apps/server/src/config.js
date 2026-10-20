@@ -79,8 +79,6 @@ function loadConfig(env = process.env) {
       clientIpHeader: hasValue(env.CLIENT_IP_HEADER) ? 'env' : defaultsLabel,
     },
     rateLimitDebug: env.RATE_LIMIT_DEBUG === '1',
-    // TEMP DEF-001 (remove after the Render check): [ipdebug] on /health?ipdebug=1.
-    ipDebug: env.IPDEBUG === '1',
     // Production defaults from the locked contract. Overridable via the config
     // object passed to createApp() (tests), not via env.
     rateLimits: {

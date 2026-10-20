@@ -63,7 +63,6 @@ npm start            # http://localhost:4000, check with: curl http://localhost:
 | `TRUST_PROXY_HOPS` | Optional. Number of proxy hops in front of the server, used to find the real client IP for auth rate limits. Default 3 when `NODE_ENV=production` (Render), 1 otherwise |
 | `CLIENT_IP_HEADER` | Optional. Header with the client IP set by the edge proxy. Default `CF-Connecting-IP` when `NODE_ENV=production`, none otherwise; `none` disables it. `True-Client-IP` / `X-Real-IP` are refused |
 | `RATE_LIMIT_DEBUG` | Optional. `1` logs the forwarded-chain length per auth request (no IPs) |
-| `IPDEBUG` | Temporary (DEF-001 Render check, to be removed). `1` enables IP-free `[ipdebug]` logging on `/health?ipdebug=1` |
 
 Optional: seed two test accounts with a sample chat. The command is idempotent, so it is safe to re-run.
 

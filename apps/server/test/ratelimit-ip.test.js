@@ -272,13 +272,29 @@ describe('Render-shaped XFF "forged, client, cf, lb" with trust proxy 3', () => 
   it('hops 3, no header: key is the real client, never the forged entry', async () => {
     const srv = await startServer({ db: false, rateLimits: LIMITS, env: { TRUST_PROXY_HOPS: '3', CLIENT_IP_HEADER: 'none' } });
     try {
-      // Forged entry rotates, real client fixed → one counter. (req.ip itself is asserted in ipdebug.test.js.)
+      // Forged entry rotates, real client fixed → one counter. (req.ip itself: see the next test.)
       const codes = await statuses((i) => login(srv.app, render(`198.18.0.${i}`, '203.0.113.31')), MAX + 2);
       limitedAfter(codes, 500);
       assert.equal((await login(srv.app, render('203.0.113.31', '203.0.113.32'))).status, 500, 'forging the limited IP does not borrow its counter');
     } finally {
       await srv.stop();
     }
+  });
+
+  it('req.ip / limiter key resolve to the client under the production defaults (test-only probe app)', async () => {
+    // Probe app built in the test only: the real app never echoes IPs.
+    const express = require('express');
+    const { clientKey } = require('../src/middleware/rateLimit');
+    const cfg = loadConfig({ NODE_ENV: 'production', CLIENT_ORIGINS: 'https://web.example' });
+    const probe = express();
+    probe.set('trust proxy', cfg.trustProxyHops);
+    probe.get('/k', (req, res) => res.json({ ip: req.ip, key: clientKey(req, cfg.clientIpHeader), noHeaderKey: clientKey(req, '') }));
+    const r = await request(probe).get('/k').set(render('198.18.9.9', '203.0.113.45')).set('CF-Connecting-IP', '203.0.113.45');
+    assert.equal(r.body.ip, '203.0.113.45', 'trust proxy 3 skips socket, LB, CF → client (not the forged entry)');
+    assert.equal(r.body.key, 'h:203.0.113.45');
+    assert.equal(r.body.noHeaderKey, 'ip:203.0.113.45');
+    const r2 = await request(probe).get('/k').set(render('198.18.9.9', '203.0.113.46'));
+    assert.equal(r2.body.key, 'ip:203.0.113.46', 'no CF header → req.ip fallback = client');
   });
 
   it('production defaults: CF-Connecting-IP keys it; without the header the chain falls back to the client', async () => {
