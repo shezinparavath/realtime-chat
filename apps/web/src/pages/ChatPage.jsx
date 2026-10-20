@@ -236,8 +236,11 @@ function Thread({ chatId, meId, otherName, suppressSlow = false }) {
             {rows.map((r) => {
               if (r.kind === 'day') {
                 return (
-                  <li key={r.key} className="day-sep" role="separator" aria-label={r.label} data-testid="day-separator">
-                    <span aria-hidden="true">{r.label}</span>
+                  // UIP a11y: the <li> stays a list item (axe/Lighthouse "list"); the separator sits inside it.
+                  <li key={r.key} className="day-sep">
+                    <div role="separator" aria-label={r.label} data-testid="day-separator">
+                      <span aria-hidden="true">{r.label}</span>
+                    </div>
                   </li>
                 );
               }
