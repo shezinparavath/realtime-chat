@@ -14,6 +14,9 @@ import { useSocketContext } from '../socket/SocketContext.jsx';
 import { formatClock } from '../components/time.js';
 import { MAX_MESSAGE_LENGTH } from '../config.js';
 
+/** RTC-UI-05 (spec §7.4): the counter is shown from this many characters. */
+const COUNTER_FROM = 1800;
+
 const NEAR_TOP_PX = 80;
 const NEAR_BOTTOM_PX = 120;
 
@@ -338,9 +341,23 @@ function Composer({ chatId, suppressSlow = false }) {
   const offline = socketStatus !== 'connected';
   const [text, setText] = useState('');
   const [error, setError] = useState(null);
+  const inputRef = useRef(null);
   const length = text.length; // JS UTF-16 length, same unit as the server (ruling P3-5)
   const over = length > MAX_MESSAGE_LENGTH;
   const blank = !text.trim();
+
+  // RTC-UI-05 (spec §7.4): 1 row that grows with the content up to 6 lines, then scrolls inside.
+  // Recomputed on every change, so it also shrinks back to 1 line after a send.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const max = parseFloat(getComputedStyle(el).maxHeight) || Infinity;
+    const border = el.offsetHeight - el.clientHeight;
+    const want = el.scrollHeight + border;
+    el.style.height = `${Math.min(want, max)}px`;
+    el.style.overflowY = want > max ? 'auto' : 'hidden';
+  }, [text]);
 
   function submit(e) {
     e?.preventDefault();
@@ -351,6 +368,7 @@ function Composer({ chatId, suppressSlow = false }) {
     }
     setText('');
     setError(null);
+    inputRef.current?.focus(); // focus stays in the input after a send (also from the Send button)
   }
 
   function onKeyDown(e) {
@@ -363,8 +381,11 @@ function Composer({ chatId, suppressSlow = false }) {
   // Over the limit: no truncation, red counter, Send disabled, inline error (ruling P3-6).
   const inlineError = over ? validateMessageText(text)?.message : error;
   const sendDisabledReason = over ? 'Message is too long' : blank ? 'Type a message to send' : null;
+  // Counter visible from COUNTER_FROM chars; below that it stays in the DOM (sr-only) for aria-describedby.
+  const counterShown = length >= COUNTER_FROM;
+  const metaShown = counterShown || !!inlineError;
   return (
-    <form className="composer" onSubmit={submit} noValidate>
+    <form className="composer" onSubmit={submit} noValidate data-testid="composer">
       {/* RTC-UI-01 (spec §7.4): muted notice, no yellow box (the Reconnecting bar carries the warning). */}
       {offline && (
         <div className="muted composer-notice" role="status" data-testid="composer-offline" data-socket={socketStatus}>
@@ -381,30 +402,25 @@ function Composer({ chatId, suppressSlow = false }) {
           )}
         </div>
       )}
-      <label htmlFor="composer-input" className="sr-only">
-        Message
-      </label>
-      <textarea
-        id="composer-input"
-        rows={2}
-        placeholder="Write a message…"
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          setError(null);
-        }}
-        onKeyDown={onKeyDown}
-        aria-invalid={over ? 'true' : undefined}
-        aria-describedby="composer-counter composer-error"
-        data-testid="composer-input"
-      />
-      <div className="composer-bar">
-        <span id="composer-counter" className={`counter${over ? ' over' : ''}`} data-testid="composer-counter">
-          {length} / {MAX_MESSAGE_LENGTH}
-        </span>
-        <span id="composer-error" className="error" aria-live="assertive" data-testid="composer-error">
-          {inlineError || ''}
-        </span>
+      <div className="composer-row">
+        <label htmlFor="composer-input" className="sr-only">
+          Message
+        </label>
+        <textarea
+          id="composer-input"
+          ref={inputRef}
+          rows={1}
+          placeholder="Write a message…"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setError(null);
+          }}
+          onKeyDown={onKeyDown}
+          aria-invalid={over ? 'true' : undefined}
+          aria-describedby="composer-counter composer-error"
+          data-testid="composer-input"
+        />
         <button
           type="submit"
           className="send"
@@ -415,6 +431,14 @@ function Composer({ chatId, suppressSlow = false }) {
         >
           Send
         </button>
+      </div>
+      <div className={`composer-meta${metaShown ? ' shown' : ''}`}>
+        <span id="composer-error" className="error" aria-live="assertive" data-testid="composer-error">
+          {inlineError || ''}
+        </span>
+        <span id="composer-counter" className={`counter${over ? ' over' : ''}${counterShown ? '' : ' sr-only'}`} data-testid="composer-counter" data-shown={counterShown ? 'true' : 'false'}>
+          {length} / {MAX_MESSAGE_LENGTH}
+        </span>
       </div>
     </form>
   );
