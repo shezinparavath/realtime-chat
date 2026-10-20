@@ -209,7 +209,8 @@ test('EMPTY_THREAD shape', () => {
 // ---------- UI helpers ----------
 test('thread items: inverted order, pending newest', () => {
   const items = buildThreadItems([msg('01', 't1'), msg('02', 't2')], [{ clientId: 'a' }, { clientId: 'b' }]);
-  assert.deepEqual(items.map((i) => i.key), ['p:b', 'p:a', 'm:02', 'm:01']);
+  // RTC-UI-04: rows now also include day separators (kind 'day'); order of bubbles unchanged.
+  assert.deepEqual(items.filter((i) => i.kind !== 'day').map((i) => i.key), ['p:b', 'p:a', 'm:02', 'm:01']);
 });
 
 test('chat preview + other participant', () => {

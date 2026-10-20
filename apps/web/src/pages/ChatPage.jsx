@@ -1,13 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { otherParticipant, useChats, validateMessageText } from '../chats/ChatsContext.jsx';
 import { StaleNotice } from '../components/Field.jsx';
 import { SlowState } from '../components/SlowState.jsx';
-import { failedText } from '../chats/messageUtils.js';
+import { failedText, groupThread } from '../chats/messageUtils.js';
 import { useCountdown } from '../hooks/useCountdown.js';
 import { rateLimitedMessage } from '../lib/rateLimit.js';
 import { useSocketContext } from '../socket/SocketContext.jsx';
-import { formatTime } from '../components/time.js';
+import { formatClock } from '../components/time.js';
 import { MAX_MESSAGE_LENGTH } from '../config.js';
 
 const NEAR_TOP_PX = 80;
@@ -130,6 +130,8 @@ function Thread({ chatId, meId, otherName, suppressSlow = false }) {
   const prev = useRef({ firstId: null, lastKey: null, scrollHeight: 0, scrollTop: 0, nearBottom: true });
 
   const messages = t?.messages || [];
+  // RTC-UI-04: grouping + day separators (spec §7.3), the same pure helper as mobile.
+  const rows = useMemo(() => groupThread(t?.messages || [], mine, meId), [t?.messages, mine, meId]);
   const firstId = messages[0]?.id ?? null;
   const lastKey = `${messages[messages.length - 1]?.id ?? ''}|${mine.length}`;
 
@@ -226,7 +228,7 @@ function Thread({ chatId, meId, otherName, suppressSlow = false }) {
             </p>
           )}
           {!t.hasMore && messages.length > 0 && (
-            <p className="muted thread-status" data-testid="thread-beginning">
+            <p className="thread-beginning" data-testid="thread-beginning">
               Beginning of your conversation with @{otherName}
             </p>
           )}
@@ -236,15 +238,35 @@ function Thread({ chatId, meId, otherName, suppressSlow = false }) {
             </p>
           )}
           <ol className="messages">
-            {messages.map((m) => (
-              <li key={m.id} className={`bubble ${m.senderId === meId ? 'mine' : 'theirs'}`} data-testid="message" data-message-id={m.id}>
-                <span className="text">{m.text}</span>
-                <span className="meta">{formatTime(m.createdAt)}</span>
-              </li>
-            ))}
-            {mine.map((p) => (
-              <PendingBubble key={p.clientId} p={p} onRetry={() => retryMessage(chatId, p.clientId)} onDiscard={() => discardMessage(chatId, p.clientId)} />
-            ))}
+            {rows.map((r) => {
+              if (r.kind === 'day') {
+                return (
+                  <li key={r.key} className="day-sep" role="separator" aria-label={r.label} data-testid="day-separator">
+                    <span aria-hidden="true">{r.label}</span>
+                  </li>
+                );
+              }
+              const shape = `${r.first ? ' g-first' : ''}${r.last ? ' g-last' : ''}`;
+              if (r.kind === 'pending') {
+                const p = r.pending;
+                return <PendingBubble key={r.key} p={p} shape={shape} onRetry={() => retryMessage(chatId, p.clientId)} onDiscard={() => discardMessage(chatId, p.clientId)} />;
+              }
+              const m = r.message;
+              const time = formatClock(m.createdAt);
+              return (
+                <li key={r.key} className={`bubble ${r.mine ? 'mine' : 'theirs'}${shape}`} data-testid="message" data-message-id={m.id}>
+                  <span className="text">{m.text}</span>
+                  {/* Time only on the last bubble of a group; grouped bubbles keep it for AT (spec §11 fix 5). */}
+                  {r.last ? (
+                    <span className="meta" data-testid="message-time">
+                      {time}
+                    </span>
+                  ) : (
+                    <span className="sr-only">{time}</span>
+                  )}
+                </li>
+              );
+            })}
           </ol>
         </>
       )}
@@ -261,15 +283,18 @@ const preview = (t) => (t.length > 40 ? `${t.slice(0, 40)}…` : t);
  * RATE_LIMITED with retryAfterMs: Retry is disabled and the text counts down until it passes;
  * Discard stays enabled.
  */
-function PendingBubble({ p, onRetry, onDiscard }) {
+function PendingBubble({ p, onRetry, onDiscard, shape = ' g-first g-last' }) {
   const wait = useCountdown(p.status === 'failed' ? p.retryAt : null);
   const error = p.code === 'RATE_LIMITED' && wait > 0 ? rateLimitedMessage(wait) : p.error;
   return (
-    <li className={`bubble mine pending ${p.status}`} data-testid={`pending-${p.status}`}>
+    // RTC-UI-04 (Jain ruling): no opacity fade while sending. The state is the "Sending…" meta in
+    // on-primary-muted on primary (5.35:1), so every text on the bubble passes AA. A Failed bubble
+    // always ends its group.
+    <li className={`bubble mine pending ${p.status}${shape}`} data-testid={`pending-${p.status}`}>
       <span className="text">{p.text}</span>
       {p.status === 'sending' ? (
-        <span className="meta" role="status">
-          sending…
+        <span className="meta" role="status" data-testid="sending-meta">
+          Sending…
         </span>
       ) : (
         <span className="meta failed-meta" data-code={p.code || undefined}>
@@ -277,9 +302,10 @@ function PendingBubble({ p, onRetry, onDiscard }) {
           <span className="sr-only" role="alert">
             {failedText(p.error)}
           </span>
-          <span aria-hidden="true" data-testid="failed-reason">
+          <span aria-hidden="true" className="failed-reason" data-testid="failed-reason">
             {failedText(error)}
-          </span>{' '}
+          </span>
+          <span className="bubble-actions">
           {p.retryable && (
             <>
               <button
@@ -303,6 +329,7 @@ function PendingBubble({ p, onRetry, onDiscard }) {
           >
             Discard
           </button>
+          </span>
         </span>
       )}
     </li>
