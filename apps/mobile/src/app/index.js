@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useChats } from '../chats/ChatsContext';
 import { chatPreview, otherParticipant } from '../chats/participants';
 import { ConnectionFooter, ReconnectingBar } from '../components/ConnectionBars';
+import { KeyboardAvoider } from '../components/KeyboardAvoider';
 import { Button, ErrorBlock, StaleNotice, Status, WakingHint, s } from '../components/ui';
 import { SEARCH_DEBOUNCE_MS } from '../config';
 import { searchUsers } from '../lib/api';
@@ -43,29 +44,32 @@ function HomeScreen() {
         }}
       />
       <ReconnectingBar />
-      <View style={st.searchBox}>
-        <TextInput
-          value={input}
-          onChangeText={setInput}
-          placeholder="Search by username…"
-          placeholderTextColor={colors.muted}
-          accessibilityLabel="Search by username"
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="off"
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-          style={s.input}
-          testID="user-search"
-        />
-        {!searching && (
-          <Text style={[s.small, { marginTop: 6 }]} testID="search-hint">
-            Search by username
-          </Text>
-        )}
-      </View>
-      <View style={{ flex: 1 }}>{searching ? <SearchResults input={input} /> : <ChatList />}</View>
-      <ConnectionFooter showSocket />
+      {/* DEF-005: search results / chat list shrink above the keyboard instead of hiding under it. */}
+      <KeyboardAvoider testID="home-keyboard-avoider">
+        <View style={st.searchBox}>
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder="Search by username…"
+            placeholderTextColor={colors.muted}
+            accessibilityLabel="Search by username"
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="off"
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+            style={s.input}
+            testID="user-search"
+          />
+          {!searching && (
+            <Text style={[s.small, { marginTop: 6 }]} testID="search-hint">
+              Search by username
+            </Text>
+          )}
+        </View>
+        <View style={{ flex: 1 }}>{searching ? <SearchResults input={input} /> : <ChatList />}</View>
+        <ConnectionFooter showSocket />
+      </KeyboardAvoider>
     </SafeAreaView>
   );
 }
