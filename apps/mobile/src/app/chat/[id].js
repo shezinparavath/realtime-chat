@@ -14,9 +14,9 @@ import { failedText } from '../../chats/messageUtils';
 import { useCountdown } from '../../hooks/useCountdown';
 import { rateLimitedMessage } from '../../lib/rateLimit';
 import { MAX_MESSAGE_LENGTH } from '../../config';
-import { formatTime } from '../../lib/time';
+import { formatClock } from '../../lib/time';
 import { useSocketContext } from '../../socket/SocketContext';
-import { colors, type } from '../../theme';
+import { colors, radius, type } from '../../theme';
 
 /** Chat view: history (inverted list, older pages on scroll-up), pending bubbles, composer. */
 export default function ChatScreenRoute() {
@@ -123,7 +123,8 @@ function Thread({ chatId, meId, otherName }) {
   const mine = pending[chatId];
   const messages = t?.messages;
   // Inverted list: newest first (pending bubbles are the newest).
-  const items = useMemo(() => buildThreadItems(messages || [], mine || []), [messages, mine]);
+  // RTC-UI-04: rows carry grouping (first/last) and day separators (spec §7.3).
+  const items = useMemo(() => buildThreadItems(messages || [], mine || [], meId), [messages, mine, meId]);
   const lastIncoming = useMemo(() => [...(messages || [])].reverse().find((m) => m.senderId !== meId), [messages, meId]);
 
   if (!t || t.status === 'loading') {
@@ -171,7 +172,7 @@ function Thread({ chatId, meId, otherName }) {
         onEndReached={maybeLoadOlder}
         onEndReachedThreshold={0.3}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 10, paddingVertical: 8 }}
+        contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 8 }}
         testID="thread"
         // In an inverted list the footer renders at the visual top.
         ListFooterComponent={
@@ -190,17 +191,19 @@ function Thread({ chatId, meId, otherName }) {
               <ErrorBlock message="Couldn't load older messages." onRetry={() => loadOlder(chatId)} testID="older-error" retryTestID="older-retry" />
             ) : null}
             {!t.hasMore && (t.messages?.length || 0) > 0 && (
-              <Text style={s.small} testID="thread-beginning">
+              <Text style={st.beginning} testID="thread-beginning">
                 Beginning of your conversation with @{otherName}
               </Text>
             )}
           </View>
         }
         renderItem={({ item }) =>
-          item.kind === 'message' ? (
-            <MessageBubble m={item.message} mine={item.message.senderId === meId} />
+          item.kind === 'day' ? (
+            <DaySeparator label={item.label} />
+          ) : item.kind === 'message' ? (
+            <MessageBubble m={item.message} mine={item.mine} first={item.first} last={item.last} />
           ) : (
-            <PendingBubble p={item.pending} onRetry={() => retryMessage(chatId, item.pending.clientId)} onDiscard={() => discardMessage(chatId, item.pending.clientId)} />
+            <PendingBubble p={item.pending} first={item.first} last={item.last} onRetry={() => retryMessage(chatId, item.pending.clientId)} onDiscard={() => discardMessage(chatId, item.pending.clientId)} />
           )
         }
       />
@@ -208,20 +211,47 @@ function Thread({ chatId, meId, otherName }) {
   );
 }
 
-function MessageBubble({ m, mine }) {
-  const time = formatTime(m.createdAt);
+/** Day separator chip "Today" / "Yesterday" / "Mon, 19 Oct" (spec §7.3); a non-interactive row. */
+function DaySeparator({ label }) {
+  return (
+    <View style={st.dayRow} accessibilityRole="header" testID="day-separator">
+      <Text style={st.dayChip}>{label}</Text>
+    </View>
+  );
+}
+
+/**
+ * Bubble shape for its place in a group (spec §7.3): 12 px before a group, 2 px inside it; the
+ * sender-side corners between grouped bubbles use the 4 px tail radius.
+ */
+function groupShape(mine, first, last) {
+  const side = mine ? 'Right' : 'Left';
+  return [
+    { marginTop: first ? 12 : 2 },
+    !first && { [`borderTop${side}Radius`]: radius.tail },
+    !last && { [`borderBottom${side}Radius`]: radius.tail },
+  ];
+}
+
+function MessageBubble({ m, mine, first = true, last = true }) {
+  const time = formatClock(m.createdAt);
   return (
     <View
-      style={[st.bubble, mine ? st.mine : st.theirs]}
+      style={[st.bubble, mine ? st.mine : st.theirs, ...groupShape(mine, first, last)]}
       accessible
+      // Every bubble keeps its own time for TalkBack, even when grouping hides it (spec §11 fix 5).
       accessibilityLabel={`${mine ? 'You' : 'Them'}: ${m.text}. ${time}`}
       testID="message"
-      dataSet={{ messageId: m.id }}
+      dataSet={{ messageId: m.id, first: first ? '1' : '0', last: last ? '1' : '0' }}
     >
       <Text style={[st.bubbleText, mine && { color: colors.onPrimary }]} selectable>
         {m.text}
       </Text>
-      <Text style={[st.meta, mine && { color: colors.onPrimaryMuted }]}>{time}</Text>
+      {last ? (
+        <Text style={[st.meta, mine && { color: colors.onPrimaryMuted }]} testID="message-time">
+          {time}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -232,16 +262,18 @@ const short = (t) => (t.length > 40 ? `${t.slice(0, 40)}…` : t);
  * RATE_LIMITED with retryAfterMs: Retry is disabled and the reason counts down until it passes;
  * Discard stays enabled.
  */
-function PendingBubble({ p, onRetry, onDiscard }) {
+function PendingBubble({ p, onRetry, onDiscard, first = true, last = true }) {
   const sending = p.status === 'sending';
   const wait = useCountdown(sending ? null : p.retryAt);
   const error = p.code === 'RATE_LIMITED' && wait > 0 ? rateLimitedMessage(wait) : p.error;
   return (
-    <View style={[st.bubble, st.mine, !sending && st.failed, sending && { opacity: 0.7 }]} testID={`pending-${p.status}`}>
+    // RTC-UI-04 (Jain ruling): no opacity fade while sending; the state is the "Sending…" meta in
+    // onPrimaryMuted on primary (5.35:1), so every text on the bubble passes AA.
+    <View style={[st.bubble, st.mine, ...groupShape(true, first, sending ? last : true), !sending && st.failed]} testID={`pending-${p.status}`}>
       <Text style={[st.bubbleText, sending && { color: colors.onPrimary }]}>{p.text}</Text>
       {sending ? (
-        <Text style={[st.meta, { color: colors.onPrimaryMuted }]} accessibilityLiveRegion="polite">
-          sending…
+        <Text style={[st.meta, { color: colors.onPrimaryMuted }]} accessibilityLiveRegion="polite" testID="sending-meta">
+          Sending…
         </Text>
       ) : (
         <View>
@@ -252,7 +284,7 @@ function PendingBubble({ p, onRetry, onDiscard }) {
           <Text style={[st.meta, { color: colors.danger }]} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden testID="failed-meta">
             {failedText(error)}
           </Text>
-          <View style={{ flexDirection: 'row', gap: 16, justifyContent: 'flex-end', marginTop: 2 }}>
+          <View style={{ flexDirection: 'row', gap: 16, justifyContent: 'flex-end', marginTop: 4 }}>
             {p.retryable && (
               <Button
                 title="Retry"
@@ -356,11 +388,15 @@ const st = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   pad: { padding: 12 },
   srOnly: { position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 },
-  bubble: { maxWidth: '82%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, marginVertical: 3 },
+  // RTC-UI-04 (spec §7.3): max 80 %, padding 8 12, radius 18; group gaps in groupShape().
+  bubble: { maxWidth: '80%', borderRadius: radius.lg, paddingHorizontal: 12, paddingVertical: 8 },
   mine: { alignSelf: 'flex-end', backgroundColor: colors.primary },
   theirs: { alignSelf: 'flex-start', backgroundColor: colors.surfaceMuted },
   failed: { backgroundColor: colors.dangerBg, borderWidth: 1, borderColor: colors.danger },
-  bubbleText: { fontSize: 16, color: colors.text },
+  bubbleText: { ...type.body, color: colors.text },
+  dayRow: { alignItems: 'center', marginTop: 16, marginBottom: 4 },
+  dayChip: { ...type.caption, fontWeight: '600', color: colors.textMuted, backgroundColor: colors.surfaceMuted, paddingHorizontal: 10, paddingVertical: 2, borderRadius: radius.pill, overflow: 'hidden' },
+  beginning: { ...type.caption, fontWeight: '600', color: colors.textMuted, textAlign: 'center', marginVertical: 8 },
   meta: { ...type.caption, color: colors.textMuted, marginTop: 2, alignSelf: 'flex-end' },
   composer: { borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface, padding: 8 },
   composerInput: { flex: 1, maxHeight: 140, minHeight: 44 },

@@ -14,3 +14,9 @@ export function formatTime(iso, now = new Date()) {
   const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
   return sameDay ? clock(d) : `${MONTHS[d.getMonth()]} ${d.getDate()}, ${clock(d)}`;
 }
+
+/** RTC-UI-04: bubble stamps are the clock only ("3:07 PM"), spec §7.3. '' for bad input. */
+export function formatClock(iso) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : clock(d);
+}
