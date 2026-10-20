@@ -11,8 +11,8 @@ A one-to-one real-time chat app with a React web client and an Android (Expo) cl
 
 | Username | Password |
 |---|---|
-| `<username>` | `<password>` |
-| `<username>` | `<password>` |
+| `demo_alice` | `fox-birch-mint-0526` |
+| `demo_bob` | `globe-fox-tango-8207` |
 
 You can log in with either the username or the email address.
 
