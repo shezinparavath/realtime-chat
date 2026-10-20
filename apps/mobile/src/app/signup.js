@@ -3,7 +3,9 @@ import { useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import { AuthScreen } from '../components/AuthScreen';
-import { Button, Field, FormError, WakingHint, s } from '../components/ui';
+import { useRateLimitLock } from '../hooks/useRateLimitLock';
+import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit';
+import { Button, Field, FormError, RateLimitCountdown, WakingHint, s } from '../components/ui';
 import {
   PASSWORD_MAX,
   PASSWORD_MIN,
@@ -24,11 +26,12 @@ export default function SignupScreen() {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [slow, setSlow] = useState(false);
+  const rateLock = useRateLimitLock(() => setErrors({}));
   const usernameRef = useRef(null);
   const passwordRef = useRef(null);
 
   async function onSubmit() {
-    if (submitting) return;
+    if (submitting || rateLock.locked) return;
     const fields = { email: normalizeEmail(email), username: normalizeSignupUsername(username), password };
     const v = validateSignup(fields);
     setErrors(v);
@@ -38,6 +41,12 @@ export default function SignupScreen() {
     try {
       await signup(fields, { onSlow: () => setSlow(true) });
     } catch (err) {
+      if (rateLock.lockFrom(err)) {
+        // 429 with Retry-After: the countdown replaces the form error; submit stays disabled until 0.
+        setErrors({});
+        setSubmitting(false);
+        return;
+      }
       setErrors(withRetry(err, serverErrorToFormErrors(err, ['email', 'username', 'password'])));
       setSubmitting(false);
     }
@@ -89,14 +98,15 @@ export default function SignupScreen() {
         onSubmitEditing={onSubmit}
         testID="password"
       />
-      <FormError message={errors._form} />
-      {errors._retry ? <Button title="Retry" variant="secondary" onPress={onSubmit} testID="signup-retry" style={{ marginBottom: 8 }} /> : null}
+      {rateLock.locked ? <RateLimitCountdown message={rateLock.message} /> : <FormError message={errors._form} />}
+      {errors._retry && !rateLock.locked ? <Button title="Retry" variant="secondary" onPress={onSubmit} testID="signup-retry" style={{ marginBottom: 8 }} /> : null}
       {submitting && slow ? <WakingHint /> : null}
       <Button
         title={submitting ? (slow ? 'Waking server…' : 'Creating account…') : 'Sign up'}
         onPress={onSubmit}
-        disabled={submitting}
+        disabled={submitting || rateLock.locked}
         busy={submitting}
+        accessibilityLabel={rateLock.locked ? `Sign up, disabled: ${RATE_LIMITED_MESSAGE}` : undefined}
         testID="signup-submit"
       />
       <View style={{ flexDirection: 'row', marginTop: 16, alignItems: 'center' }}>

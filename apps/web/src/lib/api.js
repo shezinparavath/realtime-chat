@@ -4,15 +4,18 @@
 //   { code, message, field } fields, so the UI has one shape to render.
 // - ANY 401 runs the registered unauthorized handler (clears token, back to login).
 import { API_URL, MESSAGES_PAGE_SIZE, REQUEST_TIMEOUT_MS, SLOW_THRESHOLD_MS } from '../config.js';
+import { RATE_LIMITED_MESSAGE, parseRetryAfter } from './rateLimit.js';
 import { readToken } from './tokenStore.js';
 
 export class ApiError extends Error {
-  constructor({ status = 0, code = 'NETWORK_ERROR', message = 'Request failed', field } = {}) {
+  constructor({ status = 0, code = 'NETWORK_ERROR', message = 'Request failed', field, retryAfterMs = null } = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.field = field;
+    /** RATE_LIMITED only: ms from the Retry-After header, or null when absent/unreadable. */
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -22,7 +25,7 @@ export function setUnauthorizedHandler(fn) {
   unauthorizedHandler = fn;
 }
 
-export const RATE_LIMITED_MESSAGE = 'Too many attempts, try again shortly';
+export { RATE_LIMITED_MESSAGE };
 const FALLBACK_MESSAGES = {
   NETWORK_ERROR: 'Could not reach the server. Check your connection and try again.',
   TIMEOUT: `The server didn't respond within ${REQUEST_TIMEOUT_MS / 1000}s. It may still be waking up. Try again.`,
@@ -89,8 +92,12 @@ export async function apiRequest(path, { method = 'GET', body, auth = true, sign
   if (!res.ok) {
     const e = data?.error;
     // LOCKED hardening: RATE_LIMITED (HTTP 429). Always show the agreed text, even without a JSON body.
+    // Retry-After (whole seconds) drives the form countdown. A browser can only read it when the
+    // server lists it in Access-Control-Expose-Headers; otherwise get() returns null and the UI
+    // falls back to the generic text.
     if (res.status === 429 || e?.code === 'RATE_LIMITED') {
-      throw new ApiError({ status: res.status, code: 'RATE_LIMITED', message: RATE_LIMITED_MESSAGE, field: e?.field });
+      const retryAfterMs = parseRetryAfter(res.headers?.get?.('Retry-After'));
+      throw new ApiError({ status: res.status, code: 'RATE_LIMITED', message: RATE_LIMITED_MESSAGE, field: e?.field, retryAfterMs });
     }
     throw new ApiError({
       status: res.status,

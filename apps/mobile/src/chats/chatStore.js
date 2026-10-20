@@ -6,14 +6,20 @@ import { mergeMessages, newerChat } from './messageUtils.js';
 /**
  * State (one store per signed-in user; the root layout keys the provider on user id):
  *   chats      { [chatId]: Chat }                      from GET /chats, POST /chats, message:new
- *   list       { status: idle|loading|ok|error, error, slow }   state of GET /chats
- *   threads    { [chatId]: { status: loading|ok|error, error, errorStatus, slow,
+ *   list       { status: idle|loading|ok|error, error, slow, stale }   state of GET /chats
+ *   threads    { [chatId]: { status: loading|ok|error, error, errorStatus, slow, stale,
  *                            messages: [Message] (oldest -> newest, deduped by id), hasMore,
  *                            olderLoading, olderError } }
- *   pending    { [chatId]: [{ clientId (UUID v4), attemptId, text, status: sending|failed, error, code, retryable }] }
+ *   pending    { [chatId]: [{ clientId (UUID v4), attemptId, text, status: sending|failed, error, code, retryable,
+ *                             retryAt (epoch ms; RATE_LIMITED with retryAfterMs: Retry disabled until then) }] }
+ *
+ * stale (Rulings: stale data UX #1): a background refetch (reopening a loaded thread, returning to
+ * the list, pull to refresh, reconnect refetch) failed while cached data is shown. The cached data
+ * stays; the UI shows "Couldn't refresh." + Retry. Cleared by the next successful fetch of that
+ * list / newest page.
  */
-export const initialState = { chats: {}, list: { status: 'idle', error: null, slow: false }, threads: {}, pending: {} };
-export const EMPTY_THREAD = { status: 'loading', error: null, errorStatus: null, slow: false, messages: [], hasMore: false, olderLoading: false, olderError: null };
+export const initialState = { chats: {}, list: { status: 'idle', error: null, slow: false, stale: false }, threads: {}, pending: {} };
+export const EMPTY_THREAD = { status: 'loading', error: null, errorStatus: null, slow: false, stale: false, messages: [], hasMore: false, olderLoading: false, olderError: null };
 
 function upsertChats(chats, incoming) {
   const next = { ...chats };
@@ -53,16 +59,16 @@ export function reducer(state, a) {
         const loaded = t.status === 'ok' && t.messages.length > 0;
         if (!loaded) {
           // First load. Merge (not replace) so live messages that raced the fetch aren't lost.
-          return { status: 'ok', error: null, errorStatus: null, slow: false, messages: mergeMessages(t.messages, a.messages), hasMore: a.hasMore };
+          return { status: 'ok', error: null, errorStatus: null, slow: false, stale: false, messages: mergeMessages(t.messages, a.messages), hasMore: a.hasMore };
         }
-        if (!a.messages.length) return { status: 'ok', error: null, slow: false };
+        if (!a.messages.length) return { status: 'ok', error: null, slow: false, stale: false };
         // Reconnect refetch (LOCKED rulings round 2 #2): overlap (any shared id) -> merge + dedupe,
         // keeping our older cursor. No overlap (missed more than a page) -> replace the history with
         // the newest page; the older cursor resets to its oldest id and hasMore comes from the page.
         const known = new Set(t.messages.map((m) => m.id));
         const overlaps = a.messages.some((m) => known.has(m.id));
-        if (!overlaps) return { status: 'ok', error: null, slow: false, messages: mergeMessages(a.messages), hasMore: a.hasMore, olderError: null };
-        return { status: 'ok', error: null, slow: false, messages: mergeMessages(t.messages, a.messages) };
+        if (!overlaps) return { status: 'ok', error: null, slow: false, stale: false, messages: mergeMessages(a.messages), hasMore: a.hasMore, olderError: null };
+        return { status: 'ok', error: null, slow: false, stale: false, messages: mergeMessages(t.messages, a.messages) };
       });
     }
     case 'LIVE_MESSAGE': {
@@ -89,7 +95,7 @@ export function reducer(state, a) {
       return setPending(state, a.chatId, (list) =>
         list.map((p) =>
           p.clientId === a.clientId && p.attemptId === a.attemptId && p.status === 'sending'
-            ? { ...p, status: 'failed', error: a.error, code: a.code, retryable: a.retryable }
+            ? { ...p, status: 'failed', error: a.error, code: a.code, retryable: a.retryable, retryAt: a.retryAt ?? null }
             : p,
         ),
       );

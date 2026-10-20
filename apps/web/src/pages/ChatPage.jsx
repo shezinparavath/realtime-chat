@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { otherParticipant, useChats, validateMessageText } from '../chats/ChatsContext.jsx';
-import { WakingHint } from '../components/Field.jsx';
+import { StaleNotice, WakingHint } from '../components/Field.jsx';
+import { useCountdown } from '../hooks/useCountdown.js';
+import { rateLimitedMessage } from '../lib/rateLimit.js';
 import { useSocketContext } from '../socket/SocketContext.jsx';
 import { formatTime } from '../components/time.js';
 import { MAX_MESSAGE_LENGTH } from '../config.js';
@@ -89,6 +91,7 @@ export function ChatPage({ chatId }) {
       )}
       {!notFound && !forbidden && chat && (
         <>
+          {thread?.status === 'ok' && thread.stale && <StaleNotice onRetry={() => loadNewest(chatId, { refresh: true })} testId="thread-stale" />}
           <Thread chatId={chatId} meId={user?.id} otherName={other?.username} />
           <Composer chatId={chatId} />
         </>
@@ -188,40 +191,7 @@ function Thread({ chatId, meId, otherName }) {
               </li>
             ))}
             {mine.map((p) => (
-              <li key={p.clientId} className={`bubble mine pending ${p.status}`} data-testid={`pending-${p.status}`}>
-                <span className="text">{p.text}</span>
-                {p.status === 'sending' ? (
-                  <span className="meta" role="status">
-                    sending…
-                  </span>
-                ) : (
-                  <span className="meta failed-meta" role="alert" data-code={p.code || undefined}>
-                    Failed{p.error ? `: ${p.error}` : ''}{' '}
-                    {p.retryable && (
-                      <>
-                        <button
-                          type="button"
-                          className="link-btn"
-                          onClick={() => retryMessage(chatId, p.clientId)}
-                          aria-label={`Retry sending "${preview(p.text)}"`}
-                          data-testid="retry-send"
-                        >
-                          Retry
-                        </button>{' '}
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      className="link-btn"
-                      onClick={() => discardMessage(chatId, p.clientId)}
-                      aria-label={`Discard unsent message "${preview(p.text)}"`}
-                      data-testid="discard-send"
-                    >
-                      Discard
-                    </button>
-                  </span>
-                )}
-              </li>
+              <PendingBubble key={p.clientId} p={p} onRetry={() => retryMessage(chatId, p.clientId)} onDiscard={() => discardMessage(chatId, p.clientId)} />
             ))}
           </ol>
         </>
@@ -231,6 +201,59 @@ function Thread({ chatId, meId, otherName }) {
 }
 
 const preview = (t) => (t.length > 40 ? `${t.slice(0, 40)}…` : t);
+
+/**
+ * sending… -> sent, or Failed with Retry + Discard (Discard only for non-retryable codes).
+ * RATE_LIMITED with retryAfterMs: Retry is disabled and the text counts down until it passes;
+ * Discard stays enabled.
+ */
+function PendingBubble({ p, onRetry, onDiscard }) {
+  const wait = useCountdown(p.status === 'failed' ? p.retryAt : null);
+  const error = p.code === 'RATE_LIMITED' && wait > 0 ? rateLimitedMessage(wait) : p.error;
+  return (
+    <li className={`bubble mine pending ${p.status}`} data-testid={`pending-${p.status}`}>
+      <span className="text">{p.text}</span>
+      {p.status === 'sending' ? (
+        <span className="meta" role="status">
+          sending…
+        </span>
+      ) : (
+        <span className="meta failed-meta" data-code={p.code || undefined}>
+          {/* Announced once (static reason); the visible text may tick down every second. */}
+          <span className="sr-only" role="alert">
+            Failed{p.error ? `: ${p.error}` : ''}
+          </span>
+          <span aria-hidden="true" data-testid="failed-reason">
+            Failed{error ? `: ${error}` : ''}
+          </span>{' '}
+          {p.retryable && (
+            <>
+              <button
+                type="button"
+                className="link-btn"
+                onClick={onRetry}
+                disabled={wait > 0}
+                aria-label={wait > 0 ? `Retry sending "${preview(p.text)}" (available in ${wait}s)` : `Retry sending "${preview(p.text)}"`}
+                data-testid="retry-send"
+              >
+                Retry
+              </button>{' '}
+            </>
+          )}
+          <button
+            type="button"
+            className="link-btn"
+            onClick={onDiscard}
+            aria-label={`Discard unsent message "${preview(p.text)}"`}
+            data-testid="discard-send"
+          >
+            Discard
+          </button>
+        </span>
+      )}
+    </li>
+  );
+}
 
 function isNearBottom(el) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;

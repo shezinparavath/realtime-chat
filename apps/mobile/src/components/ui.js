@@ -1,4 +1,6 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit';
 import { colors } from '../theme';
 
 /** Shown after SLOW_THRESHOLD_MS (4s) on any request or connect (Render cold start, R-4). */
@@ -51,6 +53,57 @@ export function FormError({ message }) {
     <Text style={[s.errorText, { marginVertical: 8 }]} accessibilityRole="alert" accessibilityLiveRegion="assertive" testID="form-error">
       {message}
     </Text>
+  );
+}
+
+/**
+ * Rulings: stale data UX #1: a background refetch failed but cached data is still shown.
+ * Small, non-blocking (polite, not an alert) notice at the top of that list/thread + Retry.
+ * onRetry may return a promise; Retry is disabled while it runs.
+ */
+export function StaleNotice({ onRetry, testID }) {
+  const [busy, setBusy] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => () => {
+    mounted.current = false;
+  }, []);
+  async function retry() {
+    setBusy(true);
+    try {
+      await onRetry?.();
+    } catch {
+      // the store keeps the notice up on failure
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  }
+  return (
+    <View style={s.stale} accessibilityLiveRegion="polite" testID={testID}>
+      <Text style={s.staleText}>Couldn't refresh.</Text>
+      <Button title="Retry" variant="link" onPress={retry} disabled={busy} busy={busy} accessibilityLabel="Retry refreshing" testID={testID ? `${testID}-retry` : undefined} />
+    </View>
+  );
+}
+
+/**
+ * "Too many attempts, try again in Ns" while an auth form is locked by Retry-After.
+ * DEF-003: the static reason is announced once (announceForAccessibility on mount) and stays
+ * reachable as a static, visually hidden text; the visible ticking text is hidden from
+ * accessibility so it isn't re-read every second. The disabled submit is left as it is.
+ */
+export function RateLimitCountdown({ message }) {
+  useEffect(() => {
+    AccessibilityInfo.announceForAccessibility?.(RATE_LIMITED_MESSAGE);
+  }, []);
+  return (
+    <View style={{ marginVertical: 8 }}>
+      <Text style={s.srOnly} accessibilityRole="alert" testID="rate-limit-announce">
+        {RATE_LIMITED_MESSAGE}
+      </Text>
+      <Text style={s.errorText} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden aria-hidden testID="form-error">
+        {message}
+      </Text>
+    </View>
   );
 }
 
@@ -123,6 +176,9 @@ export const s = StyleSheet.create({
   btnSecondaryText: { color: colors.text, fontWeight: '600', fontSize: 15 },
   linkBtn: { paddingVertical: 4, paddingHorizontal: 2 },
   linkText: { color: colors.primary, fontWeight: '600', fontSize: 15 },
+  srOnly: { position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 },
+  stale: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.hintBg, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 2, marginHorizontal: 12, marginBottom: 6 },
+  staleText: { color: colors.hint, fontSize: 14, fontWeight: '600' },
   field: { marginBottom: 12 },
   label: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 4 },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, backgroundColor: colors.card, color: colors.text },

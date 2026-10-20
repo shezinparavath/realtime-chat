@@ -8,7 +8,9 @@ import { otherParticipant, useChats } from '../../chats/ChatsContext';
 import { validateMessageText } from '../../chats/chatStore';
 import { buildThreadItems } from '../../chats/threadItems';
 import { ReconnectingBar } from '../../components/ConnectionBars';
-import { Button, ErrorBlock, Status, WakingHint, s } from '../../components/ui';
+import { Button, ErrorBlock, StaleNotice, Status, WakingHint, s } from '../../components/ui';
+import { useCountdown } from '../../hooks/useCountdown';
+import { rateLimitedMessage } from '../../lib/rateLimit';
 import { MAX_MESSAGE_LENGTH } from '../../config';
 import { formatTime } from '../../lib/time';
 import { useSocketContext } from '../../socket/SocketContext';
@@ -101,6 +103,7 @@ function ChatScreen() {
         )}
         {!notFound && !forbidden && chat && (
           <>
+            {thread?.status === 'ok' && thread.stale && <StaleNotice onRetry={() => loadNewest(chatId, { refresh: true })} testID="thread-stale" />}
             <Thread chatId={chatId} meId={user?.id} otherName={other?.username} />
             <Composer chatId={chatId} />
           </>
@@ -216,8 +219,14 @@ function MessageBubble({ m, mine }) {
 
 const short = (t) => (t.length > 40 ? `${t.slice(0, 40)}…` : t);
 
+/**
+ * RATE_LIMITED with retryAfterMs: Retry is disabled and the reason counts down until it passes;
+ * Discard stays enabled.
+ */
 function PendingBubble({ p, onRetry, onDiscard }) {
   const sending = p.status === 'sending';
+  const wait = useCountdown(sending ? null : p.retryAt);
+  const error = p.code === 'RATE_LIMITED' && wait > 0 ? rateLimitedMessage(wait) : p.error;
   return (
     <View style={[st.bubble, st.mine, !sending && st.failed, sending && { opacity: 0.7 }]} testID={`pending-${p.status}`}>
       <Text style={[st.bubbleText, sending && { color: colors.mineText }]}>{p.text}</Text>
@@ -226,12 +235,25 @@ function PendingBubble({ p, onRetry, onDiscard }) {
           sending…
         </Text>
       ) : (
-        <View accessibilityLiveRegion="assertive">
-          <Text style={[st.meta, { color: colors.error }]} accessibilityRole="alert" testID="failed-meta">
-            Failed{p.error ? `: ${p.error}` : ''}
+        <View>
+          {/* Announced once (static reason); the visible text may tick down every second. */}
+          <View accessibilityLiveRegion="assertive" style={st.srOnly}>
+            <Text accessibilityRole="alert">Failed{p.error ? `: ${p.error}` : ''}</Text>
+          </View>
+          <Text style={[st.meta, { color: colors.error }]} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden testID="failed-meta">
+            Failed{error ? `: ${error}` : ''}
           </Text>
           <View style={{ flexDirection: 'row', gap: 16, justifyContent: 'flex-end', marginTop: 2 }}>
-            {p.retryable && <Button title="Retry" variant="link" onPress={onRetry} accessibilityLabel={`Retry sending "${short(p.text)}"`} testID="retry-send" />}
+            {p.retryable && (
+              <Button
+                title="Retry"
+                variant="link"
+                onPress={onRetry}
+                disabled={wait > 0}
+                accessibilityLabel={wait > 0 ? `Retry sending "${short(p.text)}" (available in ${wait}s)` : `Retry sending "${short(p.text)}"`}
+                testID="retry-send"
+              />
+            )}
             <Button title="Discard" variant="link" onPress={onDiscard} accessibilityLabel={`Discard unsent message "${short(p.text)}"`} testID="discard-send" />
           </View>
         </View>

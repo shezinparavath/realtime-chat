@@ -46,8 +46,8 @@ Mock-only test hooks (not part of the contract), all `POST`:
 |---|---|---|
 | `/__mock/reset` | — | wipe all users, chats, messages, faults |
 | `/__mock/revoke-tokens` | — | every token now 401s / socket `unauthorized` |
-| `/__mock/config` | `{ dropAcks, ackDelayMs, emitDelayMs, suppressEmit, rateLimitSend, sendErrorCode }` | fault injection for `message:send` (`rateLimitSend` → ack `RATE_LIMITED`; `sendErrorCode` → ack `ok:false` with that code) |
-| `/__mock/config` | `{ rateLimitAuth, rateLimitRest, restDelayMs, failRest: { status, match } }` | REST faults: 429 `RATE_LIMITED` on signup/login or other REST, delay every REST call (cold start), fail calls whose `"METHOD /path?query"` contains `match` |
+| `/__mock/config` | `{ dropAcks, ackDelayMs, emitDelayMs, suppressEmit, rateLimitSend, sendErrorCode }` | fault injection for `message:send` (`rateLimitSend` → ack `RATE_LIMITED`; a number = `error.retryAfterMs` in ms; `sendErrorCode` → ack `ok:false` with that code) |
+| `/__mock/config` | `{ rateLimitAuth, rateLimitRest, restDelayMs, failRest: { status, match, count }, exposeRetryAfter }` | REST faults: 429 `RATE_LIMITED` on signup/login or other REST (a number = `Retry-After` seconds; `true` = no header), delay every REST call (cold start), fail calls whose `"METHOD /path?query"` contains `match` (only the next `count` if given), `exposeRetryAfter: true` adds `Access-Control-Expose-Headers: Retry-After` |
 | `/__mock/block-user` | `{ username, blocked }` | simulated outage for one user's sockets (client keeps retrying) |
 | `/__mock/bulk-messages` | `{ chatId, username, count }` | insert `count` messages (`bulk 1..n`) |
 
@@ -74,12 +74,16 @@ Since Phase 2 the socket needs a JWT; without `RTC_TOKEN` the hello check fails 
 - `src/chats/messageUtils.js`: ordering / merge / dedupe helpers
 - `src/components/ChatList.jsx`: chat list with one-line previews
 - `src/pages/*`: Login, Signup, Home (search + chat list), Chat (thread + composer, 2000-char counter)
-- `src/components/StatusBar.jsx`: footer with API health + live socket status and the cold-start hint
+- `src/components/StatusBar.jsx`: footer with the live socket status (same source as the Reconnecting… bar) and the cold-start hint; `/health` is only pinged to wake the server
+- `src/lib/rateLimit.js`, `src/hooks/useCountdown.js`, `src/hooks/useRateLimitLock.js`: Retry-After / `retryAfterMs` countdowns
 
 ## UI states
 
 Every request has a loading state; after 4 s it adds "Waking server…" (Render free tier cold start) and
 gives up at 70 s with an error and **Retry**. Errors use `role="alert"`, loading/status lines `role="status"`.
-`RATE_LIMITED` (HTTP 429 or socket ack) shows "Too many attempts, try again shortly". Failed sends show
+`RATE_LIMITED` (HTTP 429 or socket ack) shows "Too many attempts, try again shortly", or, when the server sends a
+wait (`Retry-After` header the browser can read, or `error.retryAfterMs` on the ack), "Too many attempts, try again in Ns"
+counting down with submit / Retry disabled until 0. A failed background refresh with cached data on screen keeps the
+data and shows "Couldn't refresh." + Retry at the top of the list or thread; a full error is only used when nothing is cached. Failed sends show
 Retry + Discard for timeout / disconnect / `RATE_LIMITED` / `SERVER_ERROR`, and Discard only for
 `VALIDATION_ERROR` / `MESSAGE_EMPTY` / `MESSAGE_TOO_LONG` / `FORBIDDEN`.

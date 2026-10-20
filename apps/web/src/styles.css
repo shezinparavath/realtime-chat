@@ -26,6 +26,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 .hint { color: #9a6700; }
 .error { color: #cf222e; }
 .form-error { margin: 0 0 12px; }
+.form-error > p { margin: 0; }
 button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #d0d7de; background: #f6f8fa; cursor: pointer; }
 button:hover:not(:disabled) { background: #eef1f4; }
 button:disabled { opacity: 0.6; cursor: default; }
@@ -77,3 +78,5 @@ textarea[aria-invalid='true'] { border-color: #cf222e; }
 .counter.over { color: #cf222e; font-weight: 700; }
 .send { background: #1f883d; border-color: #1a7f37; color: #fff; }
 .send:hover:not(:disabled) { background: #1a7f37 !important; }
+.stale-notice { display: flex; align-items: center; gap: 8px; background: #fff8c5; border: 1px solid #d4a72c; color: #7d4e00; border-radius: 6px; padding: 4px 10px; margin: 0 0 8px; font-size: 0.85rem; }
+.stale-notice .link-btn:disabled { opacity: 0.6; cursor: default; }

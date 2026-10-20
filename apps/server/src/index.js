@@ -2,7 +2,7 @@
 
 require('dotenv').config();
 
-const { loadConfig, assertProductionConfig } = require('./config');
+const { loadConfig, assertProductionConfig, assertValidConfig } = require('./config');
 const { connectMongo, disconnectMongo } = require('./db');
 const { createApp } = require('./app');
 
@@ -17,6 +17,12 @@ async function main() {
 
   // Fails fast (before connecting to Mongo) if NODE_ENV=production and no CLIENT_ORIGINS.
   assertProductionConfig(config);
+  assertValidConfig(config);
+  console.log(
+    `[config] client IP: trust proxy hops=${config.trustProxyHops} (${config.clientIpSource.trustProxyHops}), ` +
+      `header=${config.clientIpHeader || '(none, req.ip)'} (${config.clientIpSource.clientIpHeader})`
+  );
+  if (config.ipDebug) console.warn('[config] IPDEBUG=1: TEMP [ipdebug] logging on /health?ipdebug=1 is ON — remove after the DEF-001 check');
 
   await connectMongo(config.mongodbUri);
 

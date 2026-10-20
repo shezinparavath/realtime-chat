@@ -4,8 +4,11 @@ import { useHealth } from '../useHealth.js';
 import { useSocketContext } from '../socket/SocketContext.jsx';
 
 /**
- * Unobtrusive connection footer: API health (GET /health) + live socket state.
- * Shows a "waking server" hint during a Render cold start; details expand on click.
+ * Unobtrusive connection footer.
+ * Rulings: stale data UX #2: the footer status is driven ONLY by the live socket state (the same
+ * useSocketContext source as the Reconnecting… bar), so it can never say ok while disconnected.
+ * The Phase 1 one-time "API ok" health label is gone. GET /health is still fired once on load,
+ * purely to wake a sleeping Render instance and show the "Waking server…" hint while it's slow.
  */
 export function StatusBar({ showSocket }) {
   const health = useHealth();
@@ -16,28 +19,24 @@ export function StatusBar({ showSocket }) {
   return (
     <footer className="status-bar" data-testid="status-bar">
       <button type="button" className="link" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="Connection status details">
-        <span className={`dot dot-${health.state}`} aria-hidden="true" /> API {health.state}
-        {showSocket && (
+        {showSocket ? (
           <>
-            {' · '}
-            <span className={`dot dot-${sock.status}`} aria-hidden="true" /> live <span data-testid="socket-status">{sock.status}</span>
+            <span className={`dot dot-${sock.status}`} aria-hidden="true" /> live{' '}
+            <span data-testid="socket-status" data-status={sock.status}>
+              {sock.status}
+            </span>
           </>
+        ) : (
+          'Connection details'
         )}
       </button>
       <span aria-live="polite">{waking && <span className="hint" data-testid="statusbar-waking"> Waking server… this can take up to a minute.</span>}</span>
-      {health.state === 'error' && (
-        <button type="button" className="link" onClick={health.retry} aria-label="Retry API health check" data-testid="health-retry">
-          Retry
-        </button>
-      )}
       {open && (
         <dl className="status-details">
           <dt>backend</dt>
           <dd>
             <code>{API_URL}</code>
           </dd>
-          <dt>health</dt>
-          <dd>{health.state === 'ok' ? `ok · db ${health.data?.db} · uptime ${health.data?.uptime}s` : health.error || health.state}</dd>
           {showSocket && (
             <>
               <dt>socket</dt>
