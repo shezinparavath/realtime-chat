@@ -310,8 +310,11 @@ function PendingBubble({ p, onRetry, onDiscard, first = true, last = true }) {
 
 function Composer({ chatId, suppressSlow = false }) {
   const { sendMessage } = useChats();
-  const { status: socketStatus, slow: socketSlow, reconnect } = useSocketContext();
+  const { status: socketStatus, slow: socketSlow, reconnect, everConnected } = useSocketContext();
   const offline = socketStatus !== 'connected';
+  // UIP-11: until the first successful connect, a failed attempt ('reconnecting') still reads as
+  // "Connecting…" then the SlowState; the reconnecting copy (and the bar) only after a first connect.
+  const connecting = socketStatus === 'connecting' || (!everConnected && socketStatus === 'reconnecting');
   const [text, setText] = useState('');
   const [error, setError] = useState(null);
   const length = text.length; // JS UTF-16 length, same unit as the server (ruling P3-5)
@@ -342,11 +345,11 @@ function Composer({ chatId, suppressSlow = false }) {
           Mobile's manual Reconnect moved here from the removed footer (error / disconnected only). */}
       {offline && (
         <View style={st.notice} accessibilityLiveRegion="polite" testID="composer-offline">
-          {socketStatus === 'connecting' && socketSlow && !suppressSlow ? (
+          {connecting && socketSlow && !suppressSlow ? (
             <SlowState show variant="inline" live={false} />
           ) : (
             <Text style={st.noticeText}>
-              {socketStatus === 'connecting'
+              {connecting
                 ? 'Connecting…'
                 : socketStatus === 'error' || socketStatus === 'disconnected'
                   ? "Can't connect right now. Messages you send will fail and can be retried."

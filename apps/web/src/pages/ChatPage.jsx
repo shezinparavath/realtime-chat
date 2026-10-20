@@ -14,6 +14,12 @@ import { useSocketContext } from '../socket/SocketContext.jsx';
 import { formatClock } from '../components/time.js';
 import { MAX_MESSAGE_LENGTH } from '../config.js';
 
+/**
+ * UIP-11: until the socket has connected once, a failed first attempt (Socket.IO flips to
+ * 'reconnecting') still reads as "Connecting…" then the SlowState, never the reconnecting copy.
+ */
+const firstConnecting = (status, everConnected) => status === 'connecting' || (!everConnected && status === 'reconnecting');
+
 /** RTC-UI-05 (spec §7.4): the counter is shown from this many characters. */
 const COUNTER_FROM = 1800;
 
@@ -66,11 +72,11 @@ export function ChatPage({ chatId, suppressSlow = false, onSlowChange }) {
   const other = otherParticipant(chat, user?.id);
   const notFound = meta.state === 'notFound' || (thread?.status === 'error' && [400, 404].includes(thread.errorStatus));
   const forbidden = thread?.status === 'error' && thread.errorStatus === 403;
-  const { slow: socketSlow, status: socketStatus } = useSocketContext();
+  const { slow: socketSlow, status: socketStatus, everConnected } = useSocketContext();
 
   const metaSlow = meta.state === 'loading' && !chat && listState.slow;
   const threadSlow = !!(thread && ((thread.status === 'loading' && thread.slow) || (thread.olderLoading && thread.olderSlow)));
-  const composerSlow = socketStatus === 'connecting' && socketSlow && !threadSlow;
+  const composerSlow = firstConnecting(socketStatus, everConnected) && socketSlow && !threadSlow;
   const showingSlow = !suppressSlow && (metaSlow || threadSlow || (composerSlow && !!chat && !notFound && !forbidden));
   useEffect(() => {
     onSlowChange?.(showingSlow);
@@ -340,8 +346,9 @@ function isNearBottom(el) {
 
 function Composer({ chatId, suppressSlow = false }) {
   const { sendMessage } = useChats();
-  const { status: socketStatus, slow: socketSlow } = useSocketContext();
+  const { status: socketStatus, slow: socketSlow, everConnected } = useSocketContext();
   const offline = socketStatus !== 'connected';
+  const connecting = firstConnecting(socketStatus, everConnected);
   const [text, setText] = useState('');
   const [error, setError] = useState(null);
   const inputRef = useRef(null);
@@ -392,7 +399,7 @@ function Composer({ chatId, suppressSlow = false }) {
       {/* RTC-UI-01 (spec §7.4): muted notice, no yellow box (the Reconnecting bar carries the warning). */}
       {offline && (
         <div className="muted composer-notice" role="status" data-testid="composer-offline" data-socket={socketStatus}>
-          {socketStatus === 'connecting' ? (
+          {connecting ? (
             socketSlow && !suppressSlow ? (
               <SlowState show variant="inline" live={false} />
             ) : (
