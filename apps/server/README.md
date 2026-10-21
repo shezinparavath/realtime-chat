@@ -39,12 +39,15 @@ Rate limits (hardening): `/auth/login` and `/auth/signup` have **separate** budg
 | POST | `/chats` | Bearer | `{ userId }` → 201 new / 200 existing `{ chat }` |
 | GET | `/chats` | Bearer | `{ chats }` sorted by `updatedAt` desc |
 | GET | `/chats/:id/messages?before=&limit=` | Bearer | `{ messages (oldest→newest), hasMore }`; limit default 30, max 50 |
+| POST | `/me/push-token` | Bearer | `{ token: 'ExponentPushToken[...]' }` → 200 `{ ok: true }`; idempotent, max 5 per user (oldest evicted), moved off any other user |
+| DELETE | `/me/push-token` | Bearer | `{ token }` → 200 `{ ok: true }`; idempotent (call before logout) |
 
 Socket.IO: `io(API_URL, { auth: { token } })`; bad/missing token → `connect_error` with `err.message === 'unauthorized'`. On connect: room `user:<id>` + `hello { message:'welcome', socketId, userId }`.
 
 - `message:send { chatId, text }` + ack → `{ ok:true, message }` or `{ ok:false, error:{ code, message } }` (`FORBIDDEN`, `MESSAGE_EMPTY`, `MESSAGE_TOO_LONG`, ...).
 - Server → `message:new { message, chat }` to both participants' `user:` rooms (sender included).
 - `MAX_MESSAGE_LENGTH = 2000` exported from `src/constants.js`.
+- Push (RTC-N2-01): after a new (non-duplicate) message is saved, each recipient with 0 live sockets gets an Expo push (`https://exp.host/--/api/v2/push/send`, no env var / no Firebase secret): `{ title: senderUsername, body: text (≤100 chars, 99 + '…' if longer), data: { chatId }, channelId: 'messages', sound: 'default' }`. Fire-and-forget (never delays the ack or the per-socket send queue); `DeviceNotRegistered` tickets drop the token.
 - Typing (RTC-N1-01): client → `typing { chatId, isTyping }` (no ack); relayed as `typing { chatId, userId, isTyping }` to the other participant only; invalid / non-participant / >10 events/s per socket are dropped silently; nothing persisted.
 
 ## Render

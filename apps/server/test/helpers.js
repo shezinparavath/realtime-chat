@@ -27,7 +27,9 @@ async function startMemoryMongo() {
 // test passes its own `rateLimits` (hardening.test.js uses the real/small ones).
 const NO_LIMITS = { authWindowMs: 60_000, authMax: 1e6, sendWindowMs: 10_000, sendMax: 1e6 };
 
-async function startServer({ db = true, env = {}, rateLimits = NO_LIMITS, presenceGraceMs } = {}) {
+// Push (RTC-N2-01) is OFF by default in tests so no suite can reach exp.host; push.test.js passes
+// { push: { fetch: stub } } to turn it on with a mocked fetch.
+async function startServer({ db = true, env = {}, rateLimits = NO_LIMITS, presenceGraceMs, push = { enabled: false } } = {}) {
   let mongod = null;
   if (db) {
     mongod = await startMemoryMongo();
@@ -43,6 +45,7 @@ async function startServer({ db = true, env = {}, rateLimits = NO_LIMITS, presen
   });
   config.rateLimits = { ...config.rateLimits, ...rateLimits };
   if (presenceGraceMs !== undefined) config.presenceGraceMs = presenceGraceMs;
+  config.push = push;
   const { app, httpServer, io } = createApp(config);
   await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
   const { port } = httpServer.address();

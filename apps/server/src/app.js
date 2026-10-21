@@ -8,8 +8,10 @@ const { getDbStatus } = require('./db');
 const { authRouter } = require('./routes/auth');
 const { usersRouter } = require('./routes/users');
 const { chatsRouter } = require('./routes/chats');
+const { meRouter } = require('./routes/me');
 const { attachSocketHandlers } = require('./socket');
 const { createPresence } = require('./services/presence');
+const { createPushNotifier } = require('./services/push');
 const { notFoundHandler, errorHandler } = require('./errors');
 const { assertProductionConfig, assertValidConfig } = require('./config');
 const { SOCKET_PING_INTERVAL_MS, SOCKET_PING_TIMEOUT_MS } = require('./constants');
@@ -62,6 +64,7 @@ function createApp(config) {
   // In-memory presence (RTC-N1-04), shared by the chats router (new-chat case) and sockets.
   const presence = createPresence({ graceMs: config.presenceGraceMs });
   app.use('/chats', chatsRouter(config, presence));
+  app.use('/me', meRouter(config));
 
   app.use(notFoundHandler);
   app.use(errorHandler);
@@ -77,9 +80,16 @@ function createApp(config) {
   });
 
   presence.attach(io);
-  attachSocketHandlers(io, config, presence);
+  // Push (RTC-N2-01). config.push = { fetch?, enabled? } is a test hook (not env); default: global fetch, on.
+  const pushOpts = config.push || {};
+  const push = createPushNotifier({
+    presence,
+    fetch: pushOpts.fetch || globalThis.fetch,
+    enabled: pushOpts.enabled !== false,
+  });
+  attachSocketHandlers(io, config, presence, push);
 
-  return { app, httpServer, io, startedAt, presence };
+  return { app, httpServer, io, startedAt, presence, push };
 }
 
 module.exports = { createApp };

@@ -12,7 +12,7 @@ const { attachTyping } = require('./typing');
  * connection is refused and the client sees connect_error with
  * err.message === 'unauthorized'.
  */
-function attachSocketHandlers(io, config, presence = null) {
+function attachSocketHandlers(io, config, presence = null, push = null) {
   io.use((socket, next) => {
     const token = socket.handshake.auth && socket.handshake.auth.token;
     const user = verifyToken(token, config.jwtSecret);
@@ -70,6 +70,17 @@ function attachSocketHandlers(io, config, presence = null) {
           io.to(rooms).emit('message:new', { message: result.message, chat: result.chat });
         }
         reply({ ok: true, message: result.message });
+        // RTC-N2-01: push to offline recipients. Fire-and-forget (not awaited): never delays the
+        // ack or the next queued send; notifyNewMessage never throws.
+        if (push && !result.duplicate) {
+          push.notifyNewMessage({
+            senderId: user.id,
+            senderUsername: user.username,
+            chatId: result.message.chatId,
+            text: result.message.text,
+            participantIds: result.participantIds,
+          });
+        }
       } catch (err) {
         if (err instanceof AppError) {
           reply(ackError(err.code, err.message));
