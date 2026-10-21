@@ -39,6 +39,3 @@ yarn-error.*
 # generated native folders
 /ios
 /android
-
-# RTC-N2-02: Firebase Android config is provided by EAS (GOOGLE_SERVICES_JSON); never commit it
-google-services.json

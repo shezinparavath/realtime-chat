@@ -173,25 +173,11 @@ test('token shape matches the server pattern (ExponentPushToken[...] or ExpoPush
   }
 });
 
-import { createRequire } from 'node:module';
-test('app.config.js: googleServicesFile from GOOGLE_SERVICES_JSON (EAS file env var), else ./google-services.json; rest unchanged', () => {
-  const require = createRequire(import.meta.url);
-  const fn = require('../app.config.js');
-  const base = JSON.parse(fs.readFileSync(new URL('../app.json', import.meta.url), 'utf8')).expo;
-  const prev = process.env.GOOGLE_SERVICES_JSON;
-  try {
-    delete process.env.GOOGLE_SERVICES_JSON;
-    const a = fn({ config: base });
-    assert.equal(a.android.googleServicesFile, './google-services.json');
-    assert.deepEqual({ ...a, android: { ...a.android, googleServicesFile: base.android.googleServicesFile } }, base);
-    process.env.GOOGLE_SERVICES_JSON = '/eas/tmp/google-services.json';
-    const b = fn({ config: base });
-    assert.equal(b.android.googleServicesFile, '/eas/tmp/google-services.json');
-    assert.equal(b.android.package, base.android.package);
-    assert.equal(b.extra.eas.projectId, base.extra.eas.projectId);
-  } finally {
-    if (prev === undefined) delete process.env.GOOGLE_SERVICES_JSON;
-    else process.env.GOOGLE_SERVICES_JSON = prev;
-  }
-  assert.match(fs.readFileSync(new URL('../.gitignore', import.meta.url), 'utf8'), /^google-services\.json$/m);
+test('google-services.json is committed next to app.json and matches android.package (contents not printed)', () => {
+  const cfg = JSON.parse(fs.readFileSync(new URL('../app.json', import.meta.url), 'utf8')).expo;
+  assert.equal(cfg.android.googleServicesFile, './google-services.json');
+  assert.equal(fs.existsSync(new URL('../app.config.js', import.meta.url)), false, 'no dynamic config override');
+  const gs = JSON.parse(fs.readFileSync(new URL('../google-services.json', import.meta.url), 'utf8'));
+  const pkgs = (gs.client || []).map((c) => c?.client_info?.android_client_info?.package_name);
+  assert.ok(pkgs.length > 0 && pkgs.every((p) => p === cfg.android.package));
 });
