@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import { EMPTY_PRESENCE, attachPresence } from './lib/presence.js';
 import { API_URL, CONNECT_TIMEOUT_MS, SLOW_THRESHOLD_MS, SOCKET_PATH } from './config.js';
 
 /**
@@ -23,6 +24,8 @@ export function useSocket(token, { onUnauthorized } = {}) {
   const [socket, setSocket] = useState(null);
   // True once this token's socket has connected at least once (drives the "Reconnecting…" bar).
   const [everConnected, setEverConnected] = useState(false);
+  // RTC-N1-05: online user ids from presence:snapshot + presence (cleared on disconnect).
+  const [online, setOnline] = useState(EMPTY_PRESENCE);
   const onUnauthorizedRef = useRef(onUnauthorized);
   onUnauthorizedRef.current = onUnauthorized;
 
@@ -33,6 +36,7 @@ export function useSocket(token, { onUnauthorized } = {}) {
     setReconnectAttempt(0);
     setSlow(false);
     setEverConnected(false);
+    setOnline(EMPTY_PRESENCE);
     if (!token) {
       setStatus('idle');
       setSocket(null);
@@ -51,6 +55,8 @@ export function useSocket(token, { onUnauthorized } = {}) {
       timeout: CONNECT_TIMEOUT_MS, // per-attempt limit; Render cold start can take ~50s, then Socket.IO retries
     });
     setSocket(s);
+    // Registered at creation, before the async connect: the snapshot arrives right after hello.
+    attachPresence(s, setOnline);
 
     const slowTimer = setTimeout(() => setSlow(true), SLOW_THRESHOLD_MS);
     const markTransport = () => setTransport(s.io.engine?.transport?.name ?? null);
@@ -108,5 +114,5 @@ export function useSocket(token, { onUnauthorized } = {}) {
     };
   }, [token]);
 
-  return { socket, status, slow, hello, transport, lastError, reconnectAttempt, everConnected };
+  return { socket, status, slow, hello, transport, lastError, reconnectAttempt, everConnected, online };
 }

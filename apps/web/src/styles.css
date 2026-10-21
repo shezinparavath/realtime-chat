@@ -13,6 +13,7 @@
   --color-on-primary: #ffffff;
   --color-on-primary-muted: #dbe6ff;
   --color-primary-subtle: #eff4ff;
+  --color-online: #16a34a; /* RTC-N1-05 presence dot (contract) */
   --color-danger: #b42318;
   --color-danger-bg: #fdecea;
   --color-warning-text: #7a4b00;
@@ -306,3 +307,13 @@ main.auth-shell { max-width: none; min-height: 100vh; min-height: 100dvh; box-si
 .auth-card .slow-state-inline { margin-top: var(--space-2); }
 .auth-card .auth-link { margin: var(--space-4) 0 0; font: var(--text-secondary); }
 .auth-card .banner { margin: 0 0 var(--space-4); font: var(--text-secondary); }
+
+/* ---------- RTC-N1-02 / N1-03 / N1-05: typing subline, unread pill, presence dot ---------- */
+.chat-title-col { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.chat-subtitle { font: var(--text-caption); color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-subtitle .typing { font-style: italic; color: var(--color-primary); }
+.chat-row-bottom { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.chat-row-bottom .preview { flex: 1; min-width: 0; }
+.unread-badge { flex-shrink: 0; min-width: 20px; height: 20px; box-sizing: border-box; padding: 3px 6px; border-radius: var(--radius-pill); background: var(--color-primary); color: var(--color-on-primary); font: var(--text-badge); text-align: center; }
+.avatar { position: relative; }
+.presence-dot { position: absolute; right: 0; bottom: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--color-online); box-shadow: 0 0 0 2px var(--color-surface); }

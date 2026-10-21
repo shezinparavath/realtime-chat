@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import { EMPTY_PRESENCE, attachPresence } from './lib/presence';
 import { API_URL, API_URL_MISSING, SLOW_THRESHOLD_MS, SOCKET_PATH, SOCKET_TIMEOUT_MS } from './config';
 
 /**
@@ -24,6 +25,8 @@ export function useSocket(token, { onUnauthorized } = {}) {
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [socket, setSocket] = useState(null);
   const [everConnected, setEverConnected] = useState(false);
+  // RTC-N1-05: online user ids from presence:snapshot + presence (cleared on disconnect).
+  const [online, setOnline] = useState(EMPTY_PRESENCE);
   const [session, setSession] = useState(0);
   const onUnauthorizedRef = useRef(onUnauthorized);
   onUnauthorizedRef.current = onUnauthorized;
@@ -35,6 +38,7 @@ export function useSocket(token, { onUnauthorized } = {}) {
     setReconnectAttempt(0);
     setSlow(false);
     setEverConnected(false);
+    setOnline(EMPTY_PRESENCE);
     if (!token || API_URL_MISSING) {
       setStatus(API_URL_MISSING && token ? 'error' : 'idle');
       setSocket(null);
@@ -54,6 +58,8 @@ export function useSocket(token, { onUnauthorized } = {}) {
       timeout: SOCKET_TIMEOUT_MS, // per-attempt limit (70s); Render cold start can take ~50s
     });
     setSocket(s);
+    // Registered at creation, before the async connect: the snapshot arrives right after hello.
+    attachPresence(s, setOnline);
 
     const slowTimer = setTimeout(() => setSlow(true), SLOW_THRESHOLD_MS);
 
@@ -110,5 +116,5 @@ export function useSocket(token, { onUnauthorized } = {}) {
 
   // Fresh socket (offered in the UI for 'error' / 'disconnected').
   const reconnect = useCallback(() => setSession((n) => n + 1), []);
-  return { socket, status, slow, hello, transport, lastError, reconnectAttempt, everConnected, reconnect };
+  return { socket, status, slow, hello, transport, lastError, reconnectAttempt, everConnected, reconnect, online };
 }
