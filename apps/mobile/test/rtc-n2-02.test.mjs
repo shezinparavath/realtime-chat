@@ -172,3 +172,26 @@ test('token shape matches the server pattern (ExponentPushToken[...] or ExpoPush
     assert.equal(await r.register('u1'), want, tok);
   }
 });
+
+import { createRequire } from 'node:module';
+test('app.config.js: googleServicesFile from GOOGLE_SERVICES_JSON (EAS file env var), else ./google-services.json; rest unchanged', () => {
+  const require = createRequire(import.meta.url);
+  const fn = require('../app.config.js');
+  const base = JSON.parse(fs.readFileSync(new URL('../app.json', import.meta.url), 'utf8')).expo;
+  const prev = process.env.GOOGLE_SERVICES_JSON;
+  try {
+    delete process.env.GOOGLE_SERVICES_JSON;
+    const a = fn({ config: base });
+    assert.equal(a.android.googleServicesFile, './google-services.json');
+    assert.deepEqual({ ...a, android: { ...a.android, googleServicesFile: base.android.googleServicesFile } }, base);
+    process.env.GOOGLE_SERVICES_JSON = '/eas/tmp/google-services.json';
+    const b = fn({ config: base });
+    assert.equal(b.android.googleServicesFile, '/eas/tmp/google-services.json');
+    assert.equal(b.android.package, base.android.package);
+    assert.equal(b.extra.eas.projectId, base.extra.eas.projectId);
+  } finally {
+    if (prev === undefined) delete process.env.GOOGLE_SERVICES_JSON;
+    else process.env.GOOGLE_SERVICES_JSON = prev;
+  }
+  assert.match(fs.readFileSync(new URL('../.gitignore', import.meta.url), 'utf8'), /^google-services\.json$/m);
+});
