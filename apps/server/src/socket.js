@@ -70,7 +70,7 @@ function attachSocketHandlers(io, config, presence = null, push = null) {
           io.to(rooms).emit('message:new', { message: result.message, chat: result.chat });
         }
         reply({ ok: true, message: result.message });
-        // RTC-N2-01: push to offline recipients. Fire-and-forget (not awaited): never delays the
+        // RTC-N2-01 / DEF-012: push to every recipient (online or not; never the sender). Fire-and-forget (not awaited): never delays the
         // ack or the next queued send; notifyNewMessage never throws.
         if (push && !result.duplicate) {
           push.notifyNewMessage({

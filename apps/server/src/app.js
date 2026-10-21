@@ -83,7 +83,6 @@ function createApp(config) {
   // Push (RTC-N2-01). config.push = { fetch?, enabled? } is a test hook (not env); default: global fetch, on.
   const pushOpts = config.push || {};
   const push = createPushNotifier({
-    presence,
     fetch: pushOpts.fetch || globalThis.fetch,
     enabled: pushOpts.enabled !== false,
   });

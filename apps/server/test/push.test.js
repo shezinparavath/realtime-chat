@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * RTC-N2-01: /me/push-token + Expo push to offline recipients. fetch is ALWAYS a stub here;
+ * RTC-N2-01: /me/push-token + Expo push to every recipient (DEF-012: online or not, never the sender). fetch is ALWAYS a stub here;
  * no test touches the network.
  */
 const { describe, it, before, after, beforeEach } = require('node:test');
@@ -141,7 +141,7 @@ describe('push tokens + push notifications (RTC-N2-01)', () => {
   });
 
   describe('push on message:send', () => {
-    it('recipient offline → one Expo request with title/body/data; sender not notified', async () => {
+    it('recipient offline (no socket) → one Expo request with title/body/data; sender not notified', async () => {
       const { a, b, chatId } = await pair();
       await post(b, { token: tok('b1') });
       await post(b, { token: tok('b2') });
@@ -164,14 +164,39 @@ describe('push tokens + push notifications (RTC-N2-01)', () => {
       }
     });
 
-    it('recipient online (≥1 live socket) → no push', async () => {
+    it('DEF-012: recipient online (live socket, e.g. backgrounded app) → push IS sent; sender never', async () => {
       const { a, b, chatId } = await pair();
       await post(b, { token: tok('on') });
+      await post(a, { token: tok('sender') });
       const sa = await connect(a);
-      await connect(b);
-      assert.equal((await emitAck(sa, 'message:send', { chatId, text: 'hi' })).ok, true);
-      await sleep(200);
-      assert.equal(stub.calls.length, 0);
+      const sb = await connect(b);
+      const got = once(sb, 'message:new');
+      assert.equal((await emitAck(sa, 'message:send', { chatId, text: 'hi online' })).ok, true);
+      await got; // recipient's live socket really received it
+      await waitFor(() => stub.calls.length === 1);
+      await sleep(150);
+      assert.equal(stub.calls.length, 1);
+      assert.deepEqual(stub.calls[0].messages.map((m) => m.to), [tok('on')]);
+      const m = stub.calls[0].messages[0];
+      assert.equal(m.title, a.user.username);
+      assert.equal(m.body, 'hi online');
+      assert.deepEqual(m.data, { chatId });
+      assert.equal(m.channelId, 'messages');
+      assert.equal(m.sound, 'default');
+    });
+
+    it('DEF-012: reply from the other side pushes only the original sender (both online)', async () => {
+      const { a, b, chatId } = await pair();
+      await post(a, { token: tok('a-only') });
+      await post(b, { token: tok('b-only') });
+      await connect(a);
+      const sb = await connect(b);
+      assert.equal((await emitAck(sb, 'message:send', { chatId, text: 'reply' })).ok, true);
+      await waitFor(() => stub.calls.length === 1);
+      await sleep(150);
+      assert.equal(stub.calls.length, 1);
+      assert.deepEqual(stub.calls[0].messages.map((m) => m.to), [tok('a-only')]);
+      assert.equal(stub.calls[0].messages[0].title, b.user.username);
     });
 
     it('recipient with no tokens → no request', async () => {
