@@ -1,6 +1,7 @@
 // Pure chat store logic (no React / React Native imports so node:test can load it).
 // Ported from apps/web/src/chats/ChatsContext.jsx (same reducer, same rulings).
 import { MAX_MESSAGE_LENGTH } from '../limits.js';
+import { clearUnread, incUnread } from './unread.js';
 import { mergeMessages, newerChat } from './messageUtils.js';
 
 /**
@@ -18,7 +19,7 @@ import { mergeMessages, newerChat } from './messageUtils.js';
  * stays; the UI shows "Couldn't refresh." + Retry. Cleared by the next successful fetch of that
  * list / newest page.
  */
-export const initialState = { chats: {}, list: { status: 'idle', error: null, slow: false, stale: false }, threads: {}, pending: {} };
+export const initialState = { chats: {}, list: { status: 'idle', error: null, slow: false, stale: false }, threads: {}, pending: {}, unread: {} };
 export const EMPTY_THREAD = { status: 'loading', error: null, errorStatus: null, slow: false, stale: false, messages: [], hasMore: false, olderLoading: false, olderError: null };
 
 function upsertChats(chats, incoming) {
@@ -110,6 +111,11 @@ export function reducer(state, a) {
       s = patchThread(s, a.chatId, (t) => ({ messages: mergeMessages(t.messages, [a.message]) }));
       return { ...s, chats: bumpChatWithMessage(s.chats, a.message) };
     }
+    // RTC-N1-03: session-only unread counts { [chatId]: n } (nothing persisted; resets on reload).
+    case 'UNREAD_INC':
+      return { ...state, unread: incUnread(state.unread, a.chatId) };
+    case 'UNREAD_CLEAR':
+      return { ...state, unread: clearUnread(state.unread, a.chatId) };
     case 'PENDING_REMOVE':
       return setPending(state, a.chatId, (list) => list.filter((p) => p.clientId !== a.clientId));
     default:

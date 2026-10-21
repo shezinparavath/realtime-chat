@@ -22,7 +22,7 @@ test('token values match spec §4.1 (single brand blue)', () => {
     {
       bg: '#f4f5f7', surface: '#ffffff', surfaceMuted: '#e9ebf0', border: '#e1e4e8', borderStrong: '#8b929d',
       text: '#1d1f23', textMuted: '#5b6270', primary: '#1d4ed8', primaryHover: '#1e40af', primaryPressed: '#1e3a8a',
-      onPrimary: '#ffffff', onPrimaryMuted: '#dbe6ff', primarySubtle: '#eff4ff', danger: '#b42318', dangerBg: '#fdecea',
+      onPrimary: '#ffffff', onPrimaryMuted: '#dbe6ff', online: '#16a34a' /* RTC-N1-05 presence dot (contract) */, primarySubtle: '#eff4ff', danger: '#b42318', dangerBg: '#fdecea',
       warningText: '#7a4b00', warningBg: '#fff4d6', success: '#2e7d32', disabledBg: '#e5e7eb', disabledText: '#4b5563',
       focus: '#1d4ed8', avatar: undefined,
     },

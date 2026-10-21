@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
+import { clearUnread, incUnread, shouldCountUnread } from './unread.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { MAX_MESSAGE_LENGTH, SEND_ACK_TIMEOUT_MS } from '../config.js';
 import { createOrGetChat, fetchMessages, listChats } from '../lib/api.js';
@@ -27,7 +28,7 @@ import { compareChats, mergeMessages, newerChat } from './messageUtils.js';
  */
 const ChatsContext = createContext(null);
 
-const initialState = { chats: {}, list: { status: 'idle', error: null, slow: false, stale: false }, threads: {}, pending: {} };
+const initialState = { chats: {}, list: { status: 'idle', error: null, slow: false, stale: false }, threads: {}, pending: {}, unread: {} };
 const EMPTY_THREAD = { status: 'loading', error: null, errorStatus: null, slow: false, stale: false, messages: [], hasMore: false, olderLoading: false, olderError: null };
 
 function upsertChats(chats, incoming) {
@@ -119,6 +120,11 @@ function reducer(state, a) {
       s = patchThread(s, a.chatId, (t) => ({ messages: mergeMessages(t.messages, [a.message]) }));
       return { ...s, chats: bumpChatWithMessage(s.chats, a.message) };
     }
+    // RTC-N1-03: session-only unread counts { [chatId]: n } (nothing persisted; resets on reload).
+    case 'UNREAD_INC':
+      return { ...state, unread: incUnread(state.unread, a.chatId) };
+    case 'UNREAD_CLEAR':
+      return { ...state, unread: clearUnread(state.unread, a.chatId) };
     case 'PENDING_REMOVE':
       return setPending(state, a.chatId, (list) => list.filter((p) => p.clientId !== a.clientId));
     default:
@@ -169,13 +175,14 @@ export function validateMessageText(text) {
 
 export function ChatsProvider({ children }) {
   const { user } = useAuth();
-  const { socket } = useSocketContext();
+  const { socket, online } = useSocketContext(); // RTC-N1-05: online set lives on the socket (useSocket)
   const [state, dispatch] = useReducer(reducer, initialState);
   const stateRef = useRef(state);
   stateRef.current = state;
   const socketRef = useRef(socket);
   socketRef.current = socket;
   const openChatIdRef = useRef(null);
+  const unreadSeen = useRef(new Set());
   const meId = user?.id;
 
   const rememberChat = useCallback((chat) => chat?.id && dispatch({ type: 'CHATS_UPSERT', chats: [chat] }), []);
@@ -252,6 +259,8 @@ export function ChatsProvider({ children }) {
   /** ChatPage tells the store which thread is open, so reconnect knows what to refetch. */
   const setOpenChat = useCallback((chatId) => {
     openChatIdRef.current = chatId;
+    // RTC-N1-03: opening a chat clears its session unread count.
+    if (chatId) dispatch({ type: 'UNREAD_CLEAR', chatId });
   }, []);
 
   // ---- sending (socket only, ruling P3-1; ack-or-fail, no queue, ruling P4-2) ----
@@ -308,7 +317,10 @@ export function ChatsProvider({ children }) {
     if (!socket) return undefined;
     let connects = socket.connected ? 1 : 0;
     const onNew = (payload) => {
-      if (payload?.message?.id) dispatch({ type: 'LIVE_MESSAGE', message: payload.message, chat: payload.chat, meId });
+      if (!payload?.message?.id) return;
+      dispatch({ type: 'LIVE_MESSAGE', message: payload.message, chat: payload.chat, meId });
+      // RTC-N1-03: session-only unread (once per message id; not mine, not the open chat).
+      if (shouldCountUnread(unreadSeen.current, payload.message, { meId, openChatId: openChatIdRef.current })) dispatch({ type: 'UNREAD_INC', chatId: payload.message.chatId });
     };
     const onDisconnect = () => dispatch({ type: 'FAIL_ALL_SENDING', error: 'Not sent: connection lost.' });
     const onConnect = () => {
@@ -337,6 +349,8 @@ export function ChatsProvider({ children }) {
       listState: state.list,
       threads: state.threads,
       pending: state.pending,
+      unread: state.unread,
+      online,
       rememberChat,
       loadChats,
       openChatWith,
@@ -348,7 +362,7 @@ export function ChatsProvider({ children }) {
       retryMessage,
       discardMessage,
     }),
-    [state, sortedChats, rememberChat, loadChats, openChatWith, loadChat, loadNewest, loadOlder, setOpenChat, sendMessage, retryMessage, discardMessage],
+    [state, sortedChats, online, rememberChat, loadChats, openChatWith, loadChat, loadNewest, loadOlder, setOpenChat, sendMessage, retryMessage, discardMessage],
   );
   return <ChatsContext.Provider value={value}>{children}</ChatsContext.Provider>;
 }

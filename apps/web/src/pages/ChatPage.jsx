@@ -11,6 +11,7 @@ import { useCountdown } from '../hooks/useCountdown.js';
 import { rateLimitedMessage } from '../lib/rateLimit.js';
 import { navigate } from '../router.js';
 import { useSocketContext } from '../socket/SocketContext.jsx';
+import { useRemoteTyping, useTypingEmitter } from '../hooks/useTyping.js';
 import { formatClock } from '../components/time.js';
 import { MAX_MESSAGE_LENGTH } from '../config.js';
 
@@ -34,7 +35,7 @@ const NEAR_BOTTOM_PX = 120;
  */
 export function ChatPage({ chatId, suppressSlow = false, onSlowChange }) {
   const { user } = useAuth();
-  const { chatsById, loadChat, loadNewest, threads, setOpenChat, listState } = useChats();
+  const { chatsById, loadChat, loadNewest, threads, setOpenChat, listState, online } = useChats();
   const chat = chatsById[chatId];
   const [meta, setMeta] = useState({ state: chat ? 'ok' : 'loading', error: null });
   const [attempt, setAttempt] = useState(0);
@@ -70,6 +71,9 @@ export function ChatPage({ chatId, suppressSlow = false, onSlowChange }) {
 
   const thread = threads[chatId];
   const other = otherParticipant(chat, user?.id);
+  // RTC-N1-02 / N1-05: header subline. "typing…" wins over "Online"; offline shows nothing.
+  const otherTyping = useRemoteTyping(chatId, chat ? other?.id : null, user?.id);
+  const otherOnline = !!(chat && other?.id && online.has(other.id));
   const notFound = meta.state === 'notFound' || (thread?.status === 'error' && [400, 404].includes(thread.errorStatus));
   const forbidden = thread?.status === 'error' && thread.errorStatus === 403;
   const { slow: socketSlow, status: socketStatus, everConnected } = useSocketContext();
@@ -90,11 +94,25 @@ export function ChatPage({ chatId, suppressSlow = false, onSlowChange }) {
         <a href="#/" className="back-btn" aria-label="Back to chats" data-testid="back-to-chats">
           <span aria-hidden="true">←</span>
         </a>
-        {chat && <Avatar user={other} size={32} />}
+        {chat && <Avatar user={other} size={32} online={otherOnline} />}
         {chat && (
-          <h2 id="chat-title" data-testid="chat-title">
-            @{other?.username ?? 'unknown'}
-          </h2>
+          <div className="chat-title-col">
+            <h2 id="chat-title" data-testid="chat-title">
+              @{other?.username ?? 'unknown'}
+            </h2>
+            {/* Header is a fixed 56 px, so the subline never moves the message list. Only the typing
+                text is a live region (polite, announced once per start; repeats don't change it). */}
+            <span className="chat-subtitle">
+              <span role="status" className="typing" data-testid="typing-indicator" data-typing={otherTyping ? 'true' : 'false'}>
+                {otherTyping ? (
+                  <>
+                    <span className="sr-only">@{other?.username} is </span>typing…
+                  </>
+                ) : null}
+              </span>
+              {!otherTyping && otherOnline && <span data-testid="chat-presence">Online</span>}
+            </span>
+          </div>
         )}
       </div>
       {meta.state === 'loading' && !chat && (
@@ -347,6 +365,7 @@ function isNearBottom(el) {
 function Composer({ chatId, suppressSlow = false }) {
   const { sendMessage } = useChats();
   const { status: socketStatus, slow: socketSlow, everConnected } = useSocketContext();
+  const typing = useTypingEmitter(); // RTC-N1-02
   const offline = socketStatus !== 'connected';
   const connecting = firstConnecting(socketStatus, everConnected);
   const [text, setText] = useState('');
@@ -376,6 +395,7 @@ function Composer({ chatId, suppressSlow = false }) {
       setError(invalid.message);
       return;
     }
+    typing.stop();
     setText('');
     setError(null);
     inputRef.current?.focus(); // focus stays in the input after a send (also from the Send button)
@@ -425,7 +445,9 @@ function Composer({ chatId, suppressSlow = false }) {
           onChange={(e) => {
             setText(e.target.value);
             setError(null);
+            typing.input(chatId, e.target.value);
           }}
+          onBlur={() => typing.stop()}
           onKeyDown={onKeyDown}
           aria-invalid={over ? 'true' : undefined}
           aria-describedby="composer-counter composer-error"

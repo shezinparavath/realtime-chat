@@ -6,6 +6,8 @@ import { AuthedOnly } from '../auth/AuthedOnly';
 import { useAuth } from '../auth/AuthContext';
 import { useChats } from '../chats/ChatsContext';
 import { chatPreview, otherParticipant } from '../chats/participants';
+import { badgeText, unreadLabel } from '../chats/unread';
+import { rowLabel } from '../lib/presence';
 import { Avatar } from '../components/Avatar';
 import { ReconnectingBar } from '../components/ConnectionBars';
 import { KeyboardAvoider } from '../components/KeyboardAvoider';
@@ -190,7 +192,7 @@ function SearchResults({ input }) {
 function ChatList() {
   const router = useRouter();
   const { user } = useAuth();
-  const { sortedChats, listState, loadChats } = useChats();
+  const { sortedChats, listState, loadChats, unread, online } = useChats();
   const [refreshing, setRefreshing] = useState(false);
 
   // Load on first focus, and refetch in the background every time the list regains focus (coming
@@ -250,15 +252,17 @@ function ChatList() {
           renderItem={({ item: c }) => {
             const other = otherParticipant(c, user?.id);
             const preview = chatPreview(c, user?.id);
+            const isOnline = !!other?.id && online.has(other.id); // RTC-N1-05
+            const count = unread[c.id] || 0; // RTC-N1-03
             return (
               <Pressable
                 onPress={() => router.push({ pathname: '/chat/[id]', params: { id: c.id } })}
                 accessibilityRole="button"
-                accessibilityLabel={`Chat with @${other?.username ?? 'unknown'}. ${preview}`}
+                accessibilityLabel={`${rowLabel(`Chat with @${other?.username ?? 'unknown'}`, { online: isOnline, unreadText: count ? unreadLabel(count) : null })}. ${preview}`}
                 style={({ pressed }) => [st.chatRow, pressed && { backgroundColor: colors.surfaceMuted }]}
                 testID={`chat-row-${other?.username}`}
               >
-                <Avatar user={other} size={40} />
+                <Avatar user={other} size={40} online={isOnline} />
                 <View style={st.chatRowBody}>
                   <View style={st.chatRowTop}>
                     <Text style={st.rowName} numberOfLines={1}>
@@ -268,9 +272,16 @@ function ChatList() {
                       {formatListTime(c.updatedAt)}
                     </Text>
                   </View>
-                  <Text style={[st.preview, !c.lastMessage && st.previewEmpty]} numberOfLines={1} ellipsizeMode="tail" testID="chat-preview">
-                    {preview}
-                  </Text>
+                  <View style={st.chatRowBottom}>
+                    <Text style={[st.preview, st.previewFlex, !c.lastMessage && st.previewEmpty]} numberOfLines={1} ellipsizeMode="tail" testID="chat-preview">
+                      {preview}
+                    </Text>
+                    {count > 0 ? (
+                      <View style={st.badge} testID="unread-badge" dataSet={{ count: String(count) }}>
+                        <Text style={st.badgeText}>{badgeText(count)}</Text>
+                      </View>
+                    ) : null}
+                  </View>
                 </View>
               </Pressable>
             );
@@ -297,6 +308,11 @@ const st = StyleSheet.create({
   time: { ...type.caption, color: colors.textMuted, flexShrink: 0 },
   preview: { ...type.secondary, color: colors.textMuted },
   previewEmpty: { fontStyle: 'italic' },
+  // RTC-N1-03: unread pill, primary / onPrimary (6.70:1), type.badge 11/14 700.
+  chatRowBottom: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  previewFlex: { flex: 1, minWidth: 0 },
+  badge: { minWidth: 20, height: 20, paddingHorizontal: 6, borderRadius: 999, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  badgeText: { ...type.badge, color: colors.onPrimary },
   // Divider inset 68 px (after the avatar), on the surface so the inset isn't the page grey.
   sepWrap: { backgroundColor: colors.surface },
   sep: { height: 1, marginLeft: 68, backgroundColor: colors.border },

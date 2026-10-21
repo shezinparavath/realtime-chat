@@ -8,6 +8,8 @@ import { otherParticipant, useChats } from '../../chats/ChatsContext';
 import { validateMessageText } from '../../chats/chatStore';
 import { buildThreadItems } from '../../chats/threadItems';
 import { ReconnectingBar } from '../../components/ConnectionBars';
+import { PresenceDot } from '../../components/Avatar';
+import { useRemoteTyping, useTypingEmitter } from '../../hooks/useTyping';
 import { KeyboardAvoider } from '../../components/KeyboardAvoider';
 import { SkeletonBubbles } from '../../components/Skeleton';
 import { StateBlock } from '../../components/StateBlock';
@@ -36,7 +38,7 @@ function ChatScreen() {
   const { id } = useLocalSearchParams();
   const chatId = String(id || '');
   const { user } = useAuth();
-  const { chatsById, loadChat, loadNewest, threads, setOpenChat, listState } = useChats();
+  const { chatsById, loadChat, loadNewest, threads, setOpenChat, listState, online } = useChats();
   const chat = chatsById[chatId];
   const [meta, setMeta] = useState({ state: chat ? 'ok' : 'loading', error: null });
   const [attempt, setAttempt] = useState(0);
@@ -75,12 +77,22 @@ function ChatScreen() {
   const notFound = meta.state === 'notFound' || (thread?.status === 'error' && [400, 404].includes(thread.errorStatus));
   const forbidden = thread?.status === 'error' && thread.errorStatus === 403;
   const title = chat ? `@${other?.username ?? 'unknown'}` : 'Chat';
+  // RTC-N1-02 / N1-05: header subline ("typing…" wins over "Online"; offline shows nothing).
+  const otherTyping = useRemoteTyping(chatId, chat ? other?.id : null, user?.id);
+  const otherOnline = !!(chat && other?.id && online.has(other.id));
   const router = useRouter();
   const backToChats = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
   return (
     <SafeAreaView style={st.root} edges={['bottom', 'left', 'right']}>
-      <Stack.Screen options={{ title, headerBackTitle: 'Chats', headerBackAccessibilityLabel: 'Back to chats' }} />
+      <Stack.Screen
+        options={{
+          title,
+          headerBackTitle: 'Chats',
+          headerBackAccessibilityLabel: 'Back to chats',
+          headerTitle: () => <HeaderTitle title={title} name={other?.username} online={otherOnline} typing={otherTyping} />,
+        }}
+      />
       <ReconnectingBar />
       <KeyboardAvoider testID="chat-keyboard-avoider">
         {meta.state === 'loading' && !chat && (
@@ -114,6 +126,35 @@ function ChatScreen() {
         )}
       </KeyboardAvoider>
     </SafeAreaView>
+  );
+}
+
+/**
+ * RTC-N1-02 / N1-05: native header title + subline. The toolbar height is fixed (56), so the subline
+ * never moves the message list. Only the typing text is a polite live region (once per start).
+ */
+function HeaderTitle({ title, name, online, typing }) {
+  return (
+    <View style={st.headerTitle}>
+      <View style={st.headerTitleRow}>
+        {online ? <PresenceDot /> : null}
+        <Text style={st.headerTitleText} numberOfLines={1} accessibilityRole="header" accessibilityLabel={online && !typing ? `${title}, online` : title}>
+          {title}
+        </Text>
+      </View>
+      <View accessibilityLiveRegion="polite" testID="typing-indicator" dataSet={{ typing: typing ? 'true' : 'false' }}>
+        {typing ? (
+          <Text style={st.typingText} accessibilityLabel={`@${name} is typing`}>
+            typing…
+          </Text>
+        ) : null}
+      </View>
+      {!typing && online ? (
+        <Text style={st.onlineText} testID="chat-presence" importantForAccessibility="no" accessibilityElementsHidden>
+          Online
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -311,6 +352,7 @@ function PendingBubble({ p, onRetry, onDiscard, first = true, last = true }) {
 function Composer({ chatId, suppressSlow = false }) {
   const { sendMessage } = useChats();
   const { status: socketStatus, slow: socketSlow, reconnect, everConnected } = useSocketContext();
+  const typing = useTypingEmitter(); // RTC-N1-02
   const offline = socketStatus !== 'connected';
   // UIP-11: until the first successful connect, a failed attempt ('reconnecting') still reads as
   // "Connecting…" then the SlowState; the reconnecting copy (and the bar) only after a first connect.
@@ -327,6 +369,7 @@ function Composer({ chatId, suppressSlow = false }) {
       setError(invalid.message);
       return;
     }
+    typing.stop();
     setText('');
     setError(null);
   }
@@ -367,7 +410,9 @@ function Composer({ chatId, suppressSlow = false }) {
           onChangeText={(v) => {
             setText(v);
             setError(null);
+            typing.input(chatId, v);
           }}
+          onBlur={() => typing.stop()}
           placeholder="Write a message…"
           placeholderTextColor={colors.textMuted}
           multiline
@@ -404,6 +449,12 @@ function Composer({ chatId, suppressSlow = false }) {
 const st = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   pad: { padding: 12 },
+  // RTC-N1-02 / N1-05 header title: matches the native title (20 / 500), subline caption 12/16.
+  headerTitle: { justifyContent: 'center', maxWidth: '100%' },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerTitleText: { fontSize: 20, fontWeight: '500', color: colors.text, flexShrink: 1 },
+  typingText: { ...type.caption, fontStyle: 'italic', color: colors.primary },
+  onlineText: { ...type.caption, color: colors.textMuted },
   srOnly: { position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 },
   // RTC-UI-04 (spec §7.3): max 80 %, padding 8 12, radius 18; group gaps in groupShape().
   bubble: { maxWidth: '80%', borderRadius: radius.lg, paddingHorizontal: 12, paddingVertical: 8 },

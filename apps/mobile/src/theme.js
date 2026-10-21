@@ -16,6 +16,7 @@ export const colors = {
   primaryPressed: '#1e3a8a',
   onPrimary: '#ffffff',
   onPrimaryMuted: '#dbe6ff',
+  online: '#16a34a', // RTC-N1-05 presence dot (contract)
   primarySubtle: '#eff4ff',
   danger: '#b42318',
   dangerBg: '#fdecea',
