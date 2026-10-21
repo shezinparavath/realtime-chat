@@ -30,7 +30,7 @@ async function loadChat(filter) {
   return Chat.findOne(filter).populate('participants', 'username').lean();
 }
 
-function chatsRouter(config) {
+function chatsRouter(config, presence = null) {
   const router = express.Router();
   router.use(requireAuth(config), requireDb(config));
 
@@ -119,6 +119,8 @@ function chatsRouter(config) {
         throw err;
       }
       const created = await loadChat({ pairKey });
+      // Presence (RTC-N1-04): a newly created chat tells both participants each other's status.
+      if (presence) presence.chatCreated(me, userId.toLowerCase());
       return res.status(201).json({ chat: toChat(created) });
     })
   );

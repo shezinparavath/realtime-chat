@@ -5,6 +5,7 @@ const {
   AUTH_RATE_MAX,
   SEND_RATE_WINDOW_MS,
   SEND_RATE_MAX,
+  PRESENCE_OFFLINE_GRACE_MS,
 } = require('./constants');
 
 /**
@@ -81,6 +82,8 @@ function loadConfig(env = process.env) {
     rateLimitDebug: env.RATE_LIMIT_DEBUG === '1',
     // Production defaults from the locked contract. Overridable via the config
     // object passed to createApp() (tests), not via env.
+    // Presence offline grace (RTC-N1-04). Overridable via the config object (tests), not env.
+    presenceGraceMs: PRESENCE_OFFLINE_GRACE_MS,
     rateLimits: {
       authWindowMs: AUTH_RATE_WINDOW_MS,
       authMax: AUTH_RATE_MAX,

@@ -9,6 +9,7 @@ const { authRouter } = require('./routes/auth');
 const { usersRouter } = require('./routes/users');
 const { chatsRouter } = require('./routes/chats');
 const { attachSocketHandlers } = require('./socket');
+const { createPresence } = require('./services/presence');
 const { notFoundHandler, errorHandler } = require('./errors');
 const { assertProductionConfig, assertValidConfig } = require('./config');
 const { SOCKET_PING_INTERVAL_MS, SOCKET_PING_TIMEOUT_MS } = require('./constants');
@@ -58,7 +59,9 @@ function createApp(config) {
 
   app.use('/auth', authRouter(config));
   app.use('/users', usersRouter(config));
-  app.use('/chats', chatsRouter(config));
+  // In-memory presence (RTC-N1-04), shared by the chats router (new-chat case) and sockets.
+  const presence = createPresence({ graceMs: config.presenceGraceMs });
+  app.use('/chats', chatsRouter(config, presence));
 
   app.use(notFoundHandler);
   app.use(errorHandler);
@@ -73,9 +76,10 @@ function createApp(config) {
     pingTimeout: SOCKET_PING_TIMEOUT_MS,
   });
 
-  attachSocketHandlers(io, config);
+  presence.attach(io);
+  attachSocketHandlers(io, config, presence);
 
-  return { app, httpServer, io, startedAt };
+  return { app, httpServer, io, startedAt, presence };
 }
 
 module.exports = { createApp };
