@@ -10,7 +10,8 @@
 
 export const PUSH_CHANNEL_ID = 'messages';
 export const PUSH_CHANNEL_NAME = 'Messages';
-const TOKEN_RE = /^ExponentPushToken\[[^\]]+\]$/; // the shape the server validates
+// Same pattern the server validates (RTC-N2-01): ExponentPushToken[...] or the newer ExpoPushToken[...].
+const TOKEN_RE = /^(?:ExponentPushToken|ExpoPushToken)\[[^[\]\s]+\]$/;
 
 /** setNotificationHandler: never show, sound or badge while the app is in the foreground. */
 export const FOREGROUND_BEHAVIOR = Object.freeze({

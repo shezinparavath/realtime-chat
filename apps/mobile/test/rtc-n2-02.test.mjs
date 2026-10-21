@@ -165,3 +165,10 @@ test('app.json: plugin + defaultChannel messages, googleServicesFile, projectId;
   assert.ok(cfg.plugins.some((p) => Array.isArray(p) && p[0] === 'expo-notifications' && p[1].defaultChannel === 'messages'));
   assert.equal(typeof cfg.extra.eas.projectId, 'string');
 });
+
+test('token shape matches the server pattern (ExponentPushToken[...] or ExpoPushToken[...])', async () => {
+  for (const [tok, want] of [['ExpoPushToken[xyz]', 'registered'], ['ExponentPushToken[a b]', 'failed:token-shape'], ['ExponentPushToken[]', 'failed:token-shape']]) {
+    const { r } = mk(mockN({ granted: true, token: tok }));
+    assert.equal(await r.register('u1'), want, tok);
+  }
+});
