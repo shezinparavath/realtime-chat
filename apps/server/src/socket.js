@@ -5,6 +5,7 @@ const { AppError, ackError } = require('./errors');
 const { sendMessage } = require('./services/messages');
 const { createWindowLimiter } = require('./middleware/rateLimit');
 const { RATE_LIMITED, RATE_LIMITED_MESSAGE } = require('./constants');
+const { attachTyping } = require('./typing');
 
 /**
  * Socket.IO wiring. Handshake must carry auth: { token } (valid JWT), else the
@@ -77,6 +78,8 @@ function attachSocketHandlers(io, config, presence = null) {
         }
       }
     });
+
+    attachTyping(io, socket);
 
     socket.on('ping', (payload, ack) => {
       const body = {

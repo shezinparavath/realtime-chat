@@ -34,6 +34,10 @@ const SOCKET_PING_TIMEOUT_MS = 25000;
 /** Presence (RTC-N1-04): offline is announced this long after a user's last socket closes. */
 const PRESENCE_OFFLINE_GRACE_MS = 5000;
 
+/** Server-side typing guard: max events per window per socket (RTC-N1-01). */
+const TYPING_MAX_EVENTS = 10;
+const TYPING_WINDOW_MS = 1000;
+
 module.exports = {
   RATE_LIMITED,
   RATE_LIMITED_MESSAGE,
@@ -44,6 +48,8 @@ module.exports = {
   SOCKET_PING_INTERVAL_MS,
   SOCKET_PING_TIMEOUT_MS,
   PRESENCE_OFFLINE_GRACE_MS,
+  TYPING_MAX_EVENTS,
+  TYPING_WINDOW_MS,
   USERNAME_MIN,
   USERNAME_MAX,
   USERNAME_PATTERN,
