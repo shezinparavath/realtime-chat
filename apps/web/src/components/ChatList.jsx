@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { otherParticipant, useChats } from '../chats/ChatsContext.jsx';
 import { badgeText, unreadLabel } from '../chats/unread.js';
+import { typingIn } from '../lib/typing.js';
 import { chatPath } from '../router.js';
 import { Avatar } from './Avatar.jsx';
 import { StaleNotice } from './Field.jsx';
@@ -17,7 +18,7 @@ import { formatListTime } from './time.js';
  */
 export function ChatList({ suppressSlow = false, selectedChatId = null, hidden = false }) {
   const { user } = useAuth();
-  const { sortedChats, listState, loadChats, unread, online } = useChats();
+  const { sortedChats, listState, loadChats, unread, online, typingByChat } = useChats();
 
   useEffect(() => {
     loadChats({ background: listState.status === 'ok' }).catch(() => {});
@@ -62,6 +63,7 @@ export function ChatList({ suppressSlow = false, selectedChatId = null, hidden =
             const selected = c.id === selectedChatId; // RTC-UI-03: desktop selected row
             const isOnline = !!other?.id && online.has(other.id); // RTC-N1-05
             const count = selected ? 0 : unread[c.id] || 0; // RTC-N1-03 (the open chat never shows one)
+            const rowTyping = !!other?.id && typingIn(typingByChat, c.id, other.id); // RTC-N1-06
             return (
               <li key={c.id}>
                 <a
@@ -82,9 +84,16 @@ export function ChatList({ suppressSlow = false, selectedChatId = null, hidden =
                       </span>
                     </span>
                     <span className="chat-row-bottom">
-                      <span className={`preview${last ? '' : ' empty'}`} data-testid="chat-preview">
-                        {last ? `${last.senderId === user?.id ? 'You: ' : ''}${last.text}` : 'No messages yet'}
-                      </span>
+                      {rowTyping ? (
+                        // RTC-N1-06: replaces the preview in the same slot (same line box, so no height change).
+                        <span className="preview typing" data-testid="row-typing">
+                          typing…
+                        </span>
+                      ) : (
+                        <span className={`preview${last ? '' : ' empty'}`} data-testid="chat-preview">
+                          {last ? `${last.senderId === user?.id ? 'You: ' : ''}${last.text}` : 'No messages yet'}
+                        </span>
+                      )}
                       {count > 0 && (
                         <span className="unread-badge" data-testid="unread-badge" data-count={count}>
                           <span aria-hidden="true">{badgeText(count)}</span>

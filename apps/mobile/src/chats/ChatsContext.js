@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { EMPTY_TYPING, createTypingMap } from '../lib/typing.js';
 import { shouldCountUnread } from './unread';
 import { useAuth } from '../auth/AuthContext';
 import { SEND_ACK_TIMEOUT_MS } from '../config';
@@ -111,7 +112,7 @@ export function ChatsProvider({ children }) {
   }, []);
 
   // ---- sending (socket only, ruling P3-1; ack-or-fail, no queue, ruling P4-2) ----
-  const emitAttempt = useCallback((chatId, clientId, text) => {
+  const emitAttempt = useCallback((chatId, clientId, text, onSettled) => {
     const attemptId = nextAttemptId();
     dispatch({ type: 'PENDING_UPSERT', chatId, item: { clientId, attemptId, text, status: 'sending', error: null, code: null, retryable: false, retryAt: null } });
     const fail = (code, error, retryAt = null) =>
@@ -120,9 +121,11 @@ export function ChatsProvider({ children }) {
     if (!s || !s.connected) {
       // Socket.IO would buffer this emit until reconnect; the ruling says no queue, so fail now.
       fail('DISCONNECTED', 'Not sent: no connection.');
+      onSettled?.();
       return;
     }
     s.timeout(SEND_ACK_TIMEOUT_MS).emit('message:send', { chatId, text, clientId }, (err, ack) => {
+      onSettled?.(); // RTC-N1-06: the sender's typing false follows the ack (after the server's message:new)
       if (err) {
         fail('TIMEOUT', 'Not sent: no confirmation received.');
         return;
@@ -144,10 +147,10 @@ export function ChatsProvider({ children }) {
   }, []);
 
   /** Returns null on success (sent or queued for ack), or a { code, message } client validation error. */
-  const sendMessage = useCallback((chatId, text) => {
+  const sendMessage = useCallback((chatId, text, onSettled) => {
     const invalid = validateMessageText(text);
     if (invalid) return invalid;
-    emitAttempt(chatId, newClientId(), text);
+    emitAttempt(chatId, newClientId(), text, onSettled);
     return null;
   }, [emitAttempt]);
 
@@ -187,6 +190,26 @@ export function ChatsProvider({ children }) {
     };
   }, [socket, meId, loadChats, loadNewest]);
 
+  // RTC-N1-06: typing state for every chat (rows), one source for the header and the bubble too.
+  const [typingByChat, setTypingByChat] = useState(EMPTY_TYPING);
+  useEffect(() => {
+    setTypingByChat(EMPTY_TYPING);
+    if (!socket) return undefined;
+    const map = createTypingMap({ meId, onChange: setTypingByChat });
+    const onTyping = (p) => map.typing(p);
+    const onNew = (p) => map.message(p);
+    const onDisconnect = () => map.clear();
+    socket.on('typing', onTyping);
+    socket.on('message:new', onNew);
+    socket.on('disconnect', onDisconnect);
+    return () => {
+      socket.off('typing', onTyping);
+      socket.off('message:new', onNew);
+      socket.off('disconnect', onDisconnect);
+      map.clear();
+    };
+  }, [socket, meId]);
+
   const sortedChats = useMemo(() => Object.values(state.chats).sort(compareChats), [state.chats]);
 
   const value = useMemo(
@@ -198,6 +221,7 @@ export function ChatsProvider({ children }) {
       pending: state.pending,
       unread: state.unread,
       online,
+      typingByChat,
       rememberChat,
       loadChats,
       openChatWith,
@@ -209,7 +233,7 @@ export function ChatsProvider({ children }) {
       retryMessage,
       discardMessage,
     }),
-    [state, sortedChats, online, rememberChat, loadChats, openChatWith, loadChat, loadNewest, loadOlder, setOpenChat, sendMessage, retryMessage, discardMessage],
+    [state, sortedChats, online, typingByChat, rememberChat, loadChats, openChatWith, loadChat, loadNewest, loadOlder, setOpenChat, sendMessage, retryMessage, discardMessage],
   );
   return <ChatsContext.Provider value={value}>{children}</ChatsContext.Provider>;
 }
