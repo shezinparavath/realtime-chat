@@ -11,7 +11,7 @@ const { RATE_LIMITED, RATE_LIMITED_MESSAGE } = require('./constants');
  * connection is refused and the client sees connect_error with
  * err.message === 'unauthorized'.
  */
-function attachSocketHandlers(io, config) {
+function attachSocketHandlers(io, config, presence = null) {
   io.use((socket, next) => {
     const token = socket.handshake.auth && socket.handshake.auth.token;
     const user = verifyToken(token, config.jwtSecret);
@@ -23,6 +23,8 @@ function attachSocketHandlers(io, config) {
   io.on('connection', (socket) => {
     const { user } = socket.data;
     socket.join(`user:${user.id}`);
+    // Presence (RTC-N1-04): count this socket, maybe announce online, send presence:snapshot.
+    if (presence) presence.connected(socket);
 
     const sendLimiter = createWindowLimiter({
       max: config.rateLimits.sendMax,
@@ -32,6 +34,7 @@ function attachSocketHandlers(io, config) {
     // Never log the token — only socket id, user id and the reason.
     socket.on('disconnect', (reason) => {
       console.log(`[socket] disconnect socketId=${socket.id} userId=${user.id} reason=${reason}`);
+      if (presence) presence.disconnected(socket);
     });
 
     socket.emit('hello', {

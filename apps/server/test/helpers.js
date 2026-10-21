@@ -27,7 +27,7 @@ async function startMemoryMongo() {
 // test passes its own `rateLimits` (hardening.test.js uses the real/small ones).
 const NO_LIMITS = { authWindowMs: 60_000, authMax: 1e6, sendWindowMs: 10_000, sendMax: 1e6 };
 
-async function startServer({ db = true, env = {}, rateLimits = NO_LIMITS } = {}) {
+async function startServer({ db = true, env = {}, rateLimits = NO_LIMITS, presenceGraceMs } = {}) {
   let mongod = null;
   if (db) {
     mongod = await startMemoryMongo();
@@ -42,6 +42,7 @@ async function startServer({ db = true, env = {}, rateLimits = NO_LIMITS } = {})
     ...env,
   });
   config.rateLimits = { ...config.rateLimits, ...rateLimits };
+  if (presenceGraceMs !== undefined) config.presenceGraceMs = presenceGraceMs;
   const { app, httpServer, io } = createApp(config);
   await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
   const { port } = httpServer.address();

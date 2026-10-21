@@ -31,6 +31,8 @@ const SEND_RATE_MAX = 10; // per socket
 /** Socket keepalive (LOCKED). */
 const SOCKET_PING_INTERVAL_MS = 20000;
 const SOCKET_PING_TIMEOUT_MS = 25000;
+/** Presence (RTC-N1-04): offline is announced this long after a user's last socket closes. */
+const PRESENCE_OFFLINE_GRACE_MS = 5000;
 
 module.exports = {
   RATE_LIMITED,
@@ -41,6 +43,7 @@ module.exports = {
   SEND_RATE_MAX,
   SOCKET_PING_INTERVAL_MS,
   SOCKET_PING_TIMEOUT_MS,
+  PRESENCE_OFFLINE_GRACE_MS,
   USERNAME_MIN,
   USERNAME_MAX,
   USERNAME_PATTERN,
