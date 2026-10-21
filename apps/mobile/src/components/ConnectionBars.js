@@ -20,8 +20,13 @@ export function ReconnectingBar() {
 }
 
 /**
- * Tester hook (rulings: UI polish Q1): zero-size, not visible, hidden from TalkBack. QA reads the live
- * socket state from testID="socket-status" (its accessibilityLabel / content-desc is the status).
+ * Tester hook (rulings: UI polish Q1). QA reads the live socket state from testID="socket-status"
+ * (resource-id on Android; its accessibilityLabel / content-desc is the status).
+ * DEF-007: `uiautomator dump` only writes nodes that are visible to the user (View.isVisibleToUser:
+ * non-empty on-screen rect and alpha > 0 up the tree), so the hook is 1x1 with opacity 1. It draws
+ * nothing (no background, no children). It is kept off TalkBack with importantForAccessibility="no":
+ * TalkBack doesn't fetch not-important views, while the default (non --compressed) dump does.
+ * Not "no-hide-descendants" / aria-hidden, and no role / state / actions, so it is never a focus stop.
  */
 export function SocketStatusHook() {
   const { status } = useSocketContext();
@@ -30,7 +35,8 @@ export function SocketStatusHook() {
       style={st.hook}
       testID="socket-status"
       accessibilityLabel={status}
-      importantForAccessibility="no-hide-descendants"
+      accessible={false}
+      importantForAccessibility="no"
       accessibilityElementsHidden
       collapsable={false}
       pointerEvents="none"
@@ -42,5 +48,5 @@ const st = StyleSheet.create({
   // Spec §2A.2: 24 px, warningBg / warningText, 12/16 600 (behaviour unchanged, P4-6).
   reconnecting: { backgroundColor: colors.warningBg, height: 24, alignItems: 'center', justifyContent: 'center' },
   reconnectingText: { color: colors.warningText, ...type.caption, fontWeight: '600' },
-  hook: { position: 'absolute', top: 0, left: 0, width: 0, height: 0, overflow: 'hidden' },
+  hook: { position: 'absolute', top: 0, left: 0, width: 1, height: 1, overflow: 'hidden' },
 });
