@@ -27,6 +27,8 @@ function createPresence({ graceMs }) {
   const offlineTimers = new Map(); // userId → pending grace timer
   let io = null;
 
+  // Live (connected) socket count, ignoring the offline grace. Used by push (RTC-N2-01).
+  const socketCount = (userId) => counts.get(String(userId)) || 0;
   const isOnline = (userId) => (counts.get(userId) || 0) > 0 || offlineTimers.has(userId);
 
   /** Ids of users sharing a chat with userId (DB read; [] if the DB is down). */
@@ -107,7 +109,7 @@ function createPresence({ graceMs }) {
     counts.clear();
   }
 
-  return { attach, connected, disconnected, chatCreated, isOnline, close };
+  return { attach, connected, disconnected, chatCreated, isOnline, socketCount, close };
 }
 
 module.exports = { createPresence };
