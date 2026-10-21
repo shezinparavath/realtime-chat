@@ -3,7 +3,9 @@ import { useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import { AuthScreen } from '../components/AuthScreen';
-import { Banner, Button, Field, FormError, WakingHint, s } from '../components/ui';
+import { useRateLimitLock } from '../hooks/useRateLimitLock';
+import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit';
+import { Banner, Button, Field, FormError, PasswordField, RateLimitCountdown, SlowState, s } from '../components/ui';
 import { normalizeIdentifier, serverErrorToFormErrors, validateLogin, withRetry } from '../lib/validation';
 
 export default function LoginScreen() {
@@ -13,20 +15,34 @@ export default function LoginScreen() {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [slow, setSlow] = useState(false);
+  const rateLock = useRateLimitLock(() => setErrors({}));
+  const identifierRef = useRef(null);
   const passwordRef = useRef(null);
+  const [submits, setSubmits] = useState(0); // RTC-UI-07: each submit hides the password again
 
   async function onSubmit() {
-    if (submitting) return;
+    if (submitting || rateLock.locked) return;
+    setSubmits((n) => n + 1);
     const creds = { identifier: normalizeIdentifier(identifier), password };
     const v = validateLogin(creds);
     setErrors(v);
-    if (Object.keys(v).length) return;
+    if (Object.keys(v).length) {
+      // RTC-UI-07 (spec §9): focus the first invalid field.
+      (v.identifier ? identifierRef : passwordRef).current?.focus();
+      return;
+    }
     setSubmitting(true);
     setSlow(false);
     try {
       await login(creds, { onSlow: () => setSlow(true) });
       // The root layout's guard switches to the chats screen once authenticated.
     } catch (err) {
+      if (rateLock.lockFrom(err)) {
+        // 429 with Retry-After: the countdown replaces the form error; submit stays disabled until 0.
+        setErrors({});
+        setSubmitting(false);
+        return;
+      }
       // 401 INVALID_CREDENTIALS -> form-level message (don't reveal which part was wrong).
       setErrors(withRetry(err, err.code === 'INVALID_CREDENTIALS' ? { _form: err.message || 'Invalid credentials.' } : serverErrorToFormErrors(err, ['identifier', 'password'])));
       setSubmitting(false);
@@ -34,9 +50,10 @@ export default function LoginScreen() {
   }
 
   return (
-    <AuthScreen title="Log in">
+    <AuthScreen title="Log in" subtitle="Use your email or username.">
       {notice ? <Banner testID="auth-notice">{notice}</Banner> : null}
       <Field
+        ref={identifierRef}
         label="Email or username"
         value={identifier}
         onChangeText={setIdentifier}
@@ -49,30 +66,33 @@ export default function LoginScreen() {
         submitBehavior="submit"
         testID="identifier"
       />
-      <Field
+      <PasswordField
         ref={passwordRef}
         label="Password"
         value={password}
         onChangeText={setPassword}
+        resetKey={submits}
         error={errors.password}
         editable={!submitting}
-        secureTextEntry
         autoComplete="current-password"
         textContentType="password"
         returnKeyType="go"
         onSubmitEditing={onSubmit}
         testID="password"
       />
-      <FormError message={errors._form} />
-      {errors._retry ? <Button title="Retry" variant="secondary" onPress={onSubmit} testID="login-retry" style={{ marginBottom: 8 }} /> : null}
-      {submitting && slow ? <WakingHint /> : null}
+      {rateLock.locked ? <RateLimitCountdown message={rateLock.message} /> : <FormError message={errors._form} />}
+      {errors._retry && !rateLock.locked ? <Button title="Retry" variant="secondary" onPress={onSubmit} testID="login-retry" style={[s.authButton, { marginTop: -8, marginBottom: 16 }]} /> : null}
       <Button
-        title={submitting ? (slow ? 'Waking server…' : 'Logging in…') : 'Log in'}
+        title={submitting ? 'Logging in…' : 'Log in'}
         onPress={onSubmit}
-        disabled={submitting}
+        disabled={submitting || rateLock.locked}
         busy={submitting}
+        accessibilityLabel={rateLock.locked ? `Log in, disabled: ${RATE_LIMITED_MESSAGE}` : undefined}
         testID="login-submit"
+        style={s.authButton}
       />
+      {/* RTC-UI-01: label stays static; SlowState appears below the button after 4 s. */}
+      {submitting ? <SlowState show={slow} variant="inline" /> : null}
       <View style={{ flexDirection: 'row', marginTop: 16, alignItems: 'center' }}>
         <Text style={s.muted}>No account? </Text>
         <Link href="/signup" replace onPress={() => clearNotice()} accessibilityRole="link" testID="to-signup">

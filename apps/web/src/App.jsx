@@ -1,15 +1,18 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { ChatsProvider } from './chats/ChatsContext.jsx';
-import { ReconnectingBar, StatusBar } from './components/StatusBar.jsx';
-import { WakingHint } from './components/Field.jsx';
+import { Avatar } from './components/Avatar.jsx';
+import { ReconnectingBar } from './components/StatusBar.jsx';
+import { SlowState } from './components/SlowState.jsx';
 import { API_URL_MISSING } from './config.js';
 import { ChatPage } from './pages/ChatPage.jsx';
 import { HomePage } from './pages/HomePage.jsx';
 import { LoginPage } from './pages/LoginPage.jsx';
 import { SignupPage } from './pages/SignupPage.jsx';
+import { TWO_PANE_QUERY, useMediaQuery } from './hooks/useMediaQuery.js';
 import { navigate, useRoute } from './router.js';
-import { SocketProvider } from './socket/SocketContext.jsx';
+import { SocketProvider, useSocketContext } from './socket/SocketContext.jsx';
+import { useHealth } from './useHealth.js';
 
 const PUBLIC_ROUTES = new Set(['login', 'signup']);
 
@@ -17,6 +20,16 @@ function Shell() {
   const { status, user, logout, meError, meSlow, retryCheck } = useAuth();
   const route = useRoute();
   const authed = status === 'authenticated';
+  const sock = useSocketContext();
+  // RTC-UI-03 (spec §5): two panes at >= 960 px (list + thread side by side), one pane below.
+  const twoPane = useMediaQuery(TWO_PANE_QUERY);
+  // One SlowState per screen (spec §2A, priority submit > search > thread > list). On desktop both
+  // panes are one screen, so the panes tell each other what they're showing.
+  const [searchSlow, setSearchSlow] = useState(false);
+  const [threadSlow, setThreadSlow] = useState(false);
+  // RTC-UI-01: the debug footer is gone. The single GET /health on load still wakes a sleeping
+  // backend, but it renders nothing.
+  useHealth();
 
   // Route guards: anonymous users only see login/signup; signed-in users skip them.
   useEffect(() => {
@@ -28,16 +41,19 @@ function Shell() {
   if (status === 'checking') {
     body = (
       <section className="card">
-        <p className="muted" role="status" data-testid="session-checking">
-          Restoring your session…
-        </p>
-        {meSlow && <WakingHint />}
+        {/* SlowState block replaces the line after 4 s (spec §2A). */}
+        {!meSlow && (
+          <p className="muted" role="status" data-testid="session-checking">
+            Restoring your session…
+          </p>
+        )}
+        <SlowState show={meSlow} variant="block" />
       </section>
     );
   } else if (status === 'unverified') {
     body = (
       <section className="card" role="alert">
-        <p className="error">Could not verify your session: {meError}</p>
+        <p className="error">Couldn't restore your session. {meError}</p>
         <button type="button" onClick={retryCheck}>
           Retry
         </button>{' '}
@@ -48,34 +64,96 @@ function Shell() {
     );
   } else if (status === 'anonymous') {
     body = route.name === 'signup' ? <SignupPage /> : <LoginPage />;
-  } else if (authed) {
-    body = (
-      // Keyed on user id so the chat cache never leaks between accounts.
-      <ChatsProvider key={user?.id}>
-        {route.name === 'chat' ? <ChatPage chatId={route.chatId} /> : <HomePage />}
-      </ChatsProvider>
+  }
+
+  const inChat = authed && route.name === 'chat';
+  if (authed) {
+    // RTC-UI-03 (spec §5/§6): full-height app. Desktop shows the list pane (340 px) and the thread
+    // pane side by side; narrow web shows one pane at a time (list on #/, thread on #/chats/:id),
+    // mounting only that pane, exactly as before.
+    const showList = twoPane || !inChat;
+    const showThread = twoPane || inChat;
+    return (
+      // Tester hook (rulings: UI polish Q1): live socket state for QA, not visible and not announced.
+      <div
+        className={`app-root app-shell${twoPane ? ' two-pane' : ' one-pane'}${inChat ? ' in-chat' : ''}`}
+        data-socket-status={sock.status}
+        data-testid="app-root"
+        data-layout={twoPane ? 'two-pane' : 'one-pane'}
+      >
+        <ReconnectingBar />
+        {/* Narrow thread hides the app bar; its header has the back button instead (spec §6). */}
+        {!(inChat && !twoPane) && (
+          <header className="app-bar" data-testid="app-bar">
+            <a href="#/" className="brand">
+              Realtime Chat
+            </a>
+            <span className="session">
+              <Avatar user={user} size={28} />
+              <span className="app-bar-user" data-testid="current-user">
+                @{user?.username}
+              </span>
+              <button type="button" className="text-btn" onClick={() => logout()} data-testid="logout">
+                Log out
+              </button>
+            </span>
+          </header>
+        )}
+        {/* Keyed on user id so the chat cache never leaks between accounts. */}
+        <ChatsProvider key={user?.id}>
+          {/* RTC-UI-07 (a11y): one <main> per page at every width (narrow home/search had none), and one
+              h1 per screen, visually hidden since the design has no visible page title. The list pane is a
+              plain container: its search ("Find people") and "Chats" sections are the labelled regions
+              (an <aside> may not sit inside main, and a second "Chats" region would duplicate the name). */}
+          <main className="panes">
+            <h1 className="sr-only">Realtime Chat</h1>
+            {showList && (
+              <div className="list-pane" data-testid="list-pane">
+                <HomePage
+                  selectedChatId={inChat ? route.chatId : null}
+                  onSearchSlowChange={setSearchSlow}
+                  suppressListSlow={searchSlow || (twoPane && inChat && threadSlow)}
+                />
+              </div>
+            )}
+            {showThread && (
+              <div className="thread-pane" data-testid="thread-pane">
+                {inChat ? (
+                  // Keyed so switching chats on desktop starts each thread fresh (scroll, composer).
+                  <ChatPage
+                    key={route.chatId}
+                    chatId={route.chatId}
+                    suppressSlow={twoPane && searchSlow}
+                    onSlowChange={setThreadSlow}
+                  />
+                ) : (
+                  <div className="state-block" role="status" data-testid="thread-placeholder">
+                    <p className="state-title">Select a chat</p>
+                    <p className="state-body">Pick a conversation on the left, or search for someone to message.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </main>
+        </ChatsProvider>
+      </div>
     );
   }
 
   return (
-    <>
-      {authed && <ReconnectingBar />}
-      <header className="app-header">
-        <a href="#/" className="brand">
+    <div className="app-root" data-socket-status={sock.status} data-testid="app-root">
+      {/* RTC-UI-07 (spec §6, §7.1): no app bar when signed out; brand centred above the 400 px card,
+          both centred in the viewport. */}
+      <main className="auth-shell">
+        {/* One h1 per screen: login / signup use their card title; the session screens get a hidden one
+            (outside the role=alert card, so it is not read as part of the alert). */}
+        {status !== 'anonymous' && <h1 className="sr-only">Realtime Chat</h1>}
+        <a href="#/" className="brand auth-brand">
           Realtime Chat
         </a>
-        {authed && (
-          <span className="session">
-            <span data-testid="current-user">@{user?.username}</span>
-            <button type="button" onClick={() => logout()} data-testid="logout">
-              Log out
-            </button>
-          </span>
-        )}
-      </header>
-      <main>{body}</main>
-      <StatusBar showSocket={authed} />
-    </>
+        {body}
+      </main>
+    </div>
   );
 }
 
@@ -83,6 +161,7 @@ export default function App() {
   if (API_URL_MISSING) {
     return (
       <main>
+        <h1 className="sr-only">Realtime Chat</h1>
         <p className="error" role="alert">
           <code>VITE_API_URL</code> is not set. Copy <code>.env.example</code> to <code>.env</code> (or set it in
           the hosting env) and rebuild.

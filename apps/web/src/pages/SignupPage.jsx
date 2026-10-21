@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
-import { Field, FormError, WakingHint } from '../components/Field.jsx';
+import { Field, FormError, PasswordField, RateLimitCountdown, focusFirstInvalid } from '../components/Field.jsx';
+import { SlowState } from '../components/SlowState.jsx';
 import {
   PASSWORD_MAX,
   PASSWORD_MIN,
@@ -12,6 +13,8 @@ import {
   validateSignup,
   withRetry,
 } from '../lib/validation.js';
+import { useRateLimitLock } from '../hooks/useRateLimitLock.js';
+import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit.js';
 import { navigate } from '../router.js';
 
 export function SignupPage() {
@@ -22,19 +25,32 @@ export function SignupPage() {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [slow, setSlow] = useState(false);
+  const [submits, setSubmits] = useState(0); // RTC-UI-07: each submit hides the password again
+  const rateLock = useRateLimitLock(() => setErrors({}));
 
   async function onSubmit(e) {
     e?.preventDefault();
+    if (rateLock.locked) return;
+    setSubmits((n) => n + 1);
     const fields = { email: normalizeEmail(email), username: normalizeSignupUsername(username), password };
     const v = validateSignup(fields);
     setErrors(v);
-    if (Object.keys(v).length) return;
+    if (Object.keys(v).length) {
+      focusFirstInvalid(v, ['email', 'username', 'password']);
+      return;
+    }
     setSubmitting(true);
     setSlow(false);
     try {
       await signup(fields, { onSlow: () => setSlow(true) });
       navigate('/', { replace: true });
     } catch (err) {
+      if (rateLock.lockFrom(err)) {
+        // 429 with Retry-After: the countdown replaces the form error; submit stays disabled until 0.
+        setErrors({});
+        setSubmitting(false);
+        return;
+      }
       setErrors(withRetry(err, serverErrorToFormErrors(err, ['email', 'username', 'password'])));
       setSubmitting(false);
     }
@@ -42,7 +58,8 @@ export function SignupPage() {
 
   return (
     <section className="card auth-card" aria-labelledby="signup-title">
-      <h2 id="signup-title">Create account</h2>
+      <h1 id="signup-title">Create account</h1>
+      <p className="auth-sub">It takes a few seconds.</p>
       <form onSubmit={onSubmit} noValidate>
         <Field
           id="email"
@@ -65,10 +82,10 @@ export function SignupPage() {
           hint={`${USERNAME_MIN}–${USERNAME_MAX} characters: a–z, 0–9, "_" or "." (saved in lowercase)`}
           disabled={submitting}
         />
-        <Field
+        <PasswordField
           id="password"
           label="Password"
-          type="password"
+          resetKey={submits}
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -76,18 +93,26 @@ export function SignupPage() {
           hint={`${PASSWORD_MIN}–${PASSWORD_MAX} characters`}
           disabled={submitting}
         />
-        <FormError message={errors._form} />
-        {errors._retry && (
-          <button type="button" onClick={() => onSubmit()} data-testid="signup-retry">
+        {rateLock.locked ? <RateLimitCountdown message={rateLock.message} /> : <FormError message={errors._form} />}
+        {errors._retry && !rateLock.locked && (
+          <button type="button" className="auth-retry" onClick={() => onSubmit()} data-testid="signup-retry">
             Retry
           </button>
         )}
-        {submitting && slow && <WakingHint />}
-        <button type="submit" className="primary" disabled={submitting} aria-busy={submitting || undefined} data-testid="signup-submit">
-          {submitting ? (slow ? 'Waking server…' : 'Creating account…') : 'Sign up'}
+        <button
+          type="submit"
+          className="primary"
+          disabled={submitting || rateLock.locked}
+          aria-busy={submitting || undefined}
+          title={rateLock.locked ? RATE_LIMITED_MESSAGE : undefined}
+          data-testid="signup-submit">
+          {submitting && <span className="spinner spinner-btn" aria-hidden="true" />}
+          {submitting ? 'Creating account…' : 'Sign up'}
         </button>
+        {/* RTC-UI-01: label stays static; SlowState appears below the button after 4 s. */}
+        {submitting && <SlowState show={slow} variant="inline" />}
       </form>
-      <p className="muted">
+      <p className="muted auth-link">
         Already have an account? <a href="#/login">Log in</a>
       </p>
     </section>

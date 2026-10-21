@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
-import { Field, FormError, WakingHint } from '../components/Field.jsx';
+import { Field, FormError, PasswordField, RateLimitCountdown, focusFirstInvalid } from '../components/Field.jsx';
+import { SlowState } from '../components/SlowState.jsx';
 import { normalizeIdentifier, serverErrorToFormErrors, validateLogin, withRetry } from '../lib/validation.js';
+import { useRateLimitLock } from '../hooks/useRateLimitLock.js';
+import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit.js';
 import { navigate } from '../router.js';
 
 export function LoginPage() {
@@ -11,19 +14,32 @@ export function LoginPage() {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [slow, setSlow] = useState(false);
+  const [submits, setSubmits] = useState(0); // RTC-UI-07: each submit hides the password again
+  const rateLock = useRateLimitLock(() => setErrors({}));
 
   async function onSubmit(e) {
     e?.preventDefault();
+    if (rateLock.locked) return;
+    setSubmits((n) => n + 1);
     const creds = { identifier: normalizeIdentifier(identifier), password };
     const v = validateLogin(creds);
     setErrors(v);
-    if (Object.keys(v).length) return;
+    if (Object.keys(v).length) {
+      focusFirstInvalid(v, ['identifier', 'password']);
+      return;
+    }
     setSubmitting(true);
     setSlow(false);
     try {
       await login(creds, { onSlow: () => setSlow(true) });
       navigate('/', { replace: true });
     } catch (err) {
+      if (rateLock.lockFrom(err)) {
+        // 429 with Retry-After: the countdown replaces the form error; submit stays disabled until 0.
+        setErrors({});
+        setSubmitting(false);
+        return;
+      }
       // 401 INVALID_CREDENTIALS -> form-level message (don't reveal which part was wrong).
       setErrors(withRetry(err, err.code === 'INVALID_CREDENTIALS' ? { _form: err.message || 'Invalid credentials.' } : serverErrorToFormErrors(err, ['identifier', 'password'])));
       setSubmitting(false);
@@ -32,7 +48,8 @@ export function LoginPage() {
 
   return (
     <section className="card auth-card" aria-labelledby="login-title">
-      <h2 id="login-title">Log in</h2>
+      <h1 id="login-title">Log in</h1>
+      <p className="auth-sub">Use your email or username.</p>
       {notice && (
         <p className="banner" role="alert" data-testid="auth-notice">
           {notice}
@@ -49,28 +66,36 @@ export function LoginPage() {
           disabled={submitting}
           autoFocus
         />
-        <Field
+        <PasswordField
           id="password"
           label="Password"
-          type="password"
+          resetKey={submits}
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           error={errors.password}
           disabled={submitting}
         />
-        <FormError message={errors._form} />
-        {errors._retry && (
-          <button type="button" onClick={() => onSubmit()} data-testid="login-retry">
+        {rateLock.locked ? <RateLimitCountdown message={rateLock.message} /> : <FormError message={errors._form} />}
+        {errors._retry && !rateLock.locked && (
+          <button type="button" className="auth-retry" onClick={() => onSubmit()} data-testid="login-retry">
             Retry
           </button>
         )}
-        {submitting && slow && <WakingHint />}
-        <button type="submit" className="primary" disabled={submitting} aria-busy={submitting || undefined} data-testid="login-submit">
-          {submitting ? (slow ? 'Waking server…' : 'Logging in…') : 'Log in'}
+        <button
+          type="submit"
+          className="primary"
+          disabled={submitting || rateLock.locked}
+          aria-busy={submitting || undefined}
+          title={rateLock.locked ? RATE_LIMITED_MESSAGE : undefined}
+          data-testid="login-submit">
+          {submitting && <span className="spinner spinner-btn" aria-hidden="true" />}
+          {submitting ? 'Logging in…' : 'Log in'}
         </button>
+        {/* RTC-UI-01: label stays static; SlowState appears below the button after 4 s. */}
+        {submitting && <SlowState show={slow} variant="inline" />}
       </form>
-      <p className="muted">
+      <p className="muted auth-link">
         No account?{' '}
         <a
           href="#/signup"

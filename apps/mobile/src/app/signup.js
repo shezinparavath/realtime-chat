@@ -3,7 +3,9 @@ import { useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import { AuthScreen } from '../components/AuthScreen';
-import { Button, Field, FormError, WakingHint, s } from '../components/ui';
+import { useRateLimitLock } from '../hooks/useRateLimitLock';
+import { RATE_LIMITED_MESSAGE } from '../lib/rateLimit';
+import { Button, Field, FormError, PasswordField, RateLimitCountdown, SlowState, s } from '../components/ui';
 import {
   PASSWORD_MAX,
   PASSWORD_MIN,
@@ -24,28 +26,43 @@ export default function SignupScreen() {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [slow, setSlow] = useState(false);
+  const rateLock = useRateLimitLock(() => setErrors({}));
+  const emailRef = useRef(null);
   const usernameRef = useRef(null);
   const passwordRef = useRef(null);
+  const [submits, setSubmits] = useState(0); // RTC-UI-07: each submit hides the password again
 
   async function onSubmit() {
-    if (submitting) return;
+    if (submitting || rateLock.locked) return;
+    setSubmits((n) => n + 1);
     const fields = { email: normalizeEmail(email), username: normalizeSignupUsername(username), password };
     const v = validateSignup(fields);
     setErrors(v);
-    if (Object.keys(v).length) return;
+    if (Object.keys(v).length) {
+      // RTC-UI-07 (spec §9): focus the first invalid field.
+      (v.email ? emailRef : v.username ? usernameRef : passwordRef).current?.focus();
+      return;
+    }
     setSubmitting(true);
     setSlow(false);
     try {
       await signup(fields, { onSlow: () => setSlow(true) });
     } catch (err) {
+      if (rateLock.lockFrom(err)) {
+        // 429 with Retry-After: the countdown replaces the form error; submit stays disabled until 0.
+        setErrors({});
+        setSubmitting(false);
+        return;
+      }
       setErrors(withRetry(err, serverErrorToFormErrors(err, ['email', 'username', 'password'])));
       setSubmitting(false);
     }
   }
 
   return (
-    <AuthScreen title="Create account">
+    <AuthScreen title="Create account" subtitle="It takes a few seconds.">
       <Field
+        ref={emailRef}
         label="Email"
         value={email}
         onChangeText={setEmail}
@@ -74,31 +91,34 @@ export default function SignupScreen() {
         submitBehavior="submit"
         testID="username"
       />
-      <Field
+      <PasswordField
         ref={passwordRef}
         label="Password"
         value={password}
         onChangeText={setPassword}
+        resetKey={submits}
         error={errors.password}
         hint={`${PASSWORD_MIN}–${PASSWORD_MAX} characters`}
         editable={!submitting}
-        secureTextEntry
         autoComplete="new-password"
         textContentType="newPassword"
         returnKeyType="go"
         onSubmitEditing={onSubmit}
         testID="password"
       />
-      <FormError message={errors._form} />
-      {errors._retry ? <Button title="Retry" variant="secondary" onPress={onSubmit} testID="signup-retry" style={{ marginBottom: 8 }} /> : null}
-      {submitting && slow ? <WakingHint /> : null}
+      {rateLock.locked ? <RateLimitCountdown message={rateLock.message} /> : <FormError message={errors._form} />}
+      {errors._retry && !rateLock.locked ? <Button title="Retry" variant="secondary" onPress={onSubmit} testID="signup-retry" style={[s.authButton, { marginTop: -8, marginBottom: 16 }]} /> : null}
       <Button
-        title={submitting ? (slow ? 'Waking server…' : 'Creating account…') : 'Sign up'}
+        title={submitting ? 'Creating account…' : 'Sign up'}
         onPress={onSubmit}
-        disabled={submitting}
+        disabled={submitting || rateLock.locked}
         busy={submitting}
+        accessibilityLabel={rateLock.locked ? `Sign up, disabled: ${RATE_LIMITED_MESSAGE}` : undefined}
         testID="signup-submit"
+        style={s.authButton}
       />
+      {/* RTC-UI-01: label stays static; SlowState appears below the button after 4 s. */}
+      {submitting ? <SlowState show={slow} variant="inline" /> : null}
       <View style={{ flexDirection: 'row', marginTop: 16, alignItems: 'center' }}>
         <Text style={s.muted}>Already have an account? </Text>
         <Link href="/login" replace accessibilityRole="link" testID="to-login">

@@ -10,18 +10,30 @@ const { usersRouter } = require('./routes/users');
 const { chatsRouter } = require('./routes/chats');
 const { attachSocketHandlers } = require('./socket');
 const { notFoundHandler, errorHandler } = require('./errors');
+const { assertProductionConfig, assertValidConfig } = require('./config');
+const { SOCKET_PING_INTERVAL_MS, SOCKET_PING_TIMEOUT_MS } = require('./constants');
 
 /**
  * Build Express app + HTTP server + Socket.IO sharing one listener.
  * Does not call listen(); caller does.
  */
 function createApp(config) {
+  assertProductionConfig(config); // throws: NODE_ENV=production without CLIENT_ORIGINS
+  assertValidConfig(config); // throws: malformed TRUST_PROXY_HOPS / CLIENT_IP_HEADER
+
   const app = express();
+  app.disable('x-powered-by'); // spec: hardening (interface-contracts, nice-to-have + hardening)
+  // DEF-001: trusted proxy hops for req.ip. TRUST_PROXY_HOPS; default 3 in production
+  // (Render: XFF = client, cloudflare, render LB), 1 elsewhere. See config.js.
+  app.set('trust proxy', config.trustProxyHops);
   const startedAt = Date.now();
 
   const corsOptions = {
     origin: config.clientOrigins.length > 0 ? config.clientOrigins : true,
     credentials: true,
+    // Let cross-origin clients read Retry-After on 429s (web countdown #16).
+    // cors() runs before the routers, so limiter 429s carry these headers too.
+    exposedHeaders: ['Retry-After'],
   };
 
   app.use(cors(corsOptions));
@@ -56,6 +68,9 @@ function createApp(config) {
   const io = new Server(httpServer, {
     cors: corsOptions,
     path: '/socket.io',
+    // Explicit keepalive (LOCKED): ping every 20 s, drop after 25 s without pong.
+    pingInterval: SOCKET_PING_INTERVAL_MS,
+    pingTimeout: SOCKET_PING_TIMEOUT_MS,
   });
 
   attachSocketHandlers(io, config);

@@ -4,18 +4,21 @@
 //   { code, message, field } fields, so the UI has one shape to render.
 // - ANY 401 runs the registered unauthorized handler (clears token, back to login).
 import { API_URL, MESSAGES_PAGE_SIZE, REQUEST_TIMEOUT_MS, SLOW_THRESHOLD_MS } from '../config';
+import { parseRetryAfter } from './rateLimit';
 import { getToken } from './tokenStore';
 import { RATE_LIMITED_MESSAGE, RETRYABLE_CODES, isRetryable } from './errors';
 
 export { RATE_LIMITED_MESSAGE, RETRYABLE_CODES, isRetryable };
 
 export class ApiError extends Error {
-  constructor({ status = 0, code = 'NETWORK_ERROR', message = 'Request failed', field } = {}) {
+  constructor({ status = 0, code = 'NETWORK_ERROR', message = 'Request failed', field, retryAfterMs = null } = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.field = field;
+    /** RATE_LIMITED only: ms from the Retry-After header, or null when absent. */
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -26,9 +29,11 @@ export function setUnauthorizedHandler(fn) {
 }
 
 const FALLBACK_MESSAGES = {
-  NETWORK_ERROR: 'Could not reach the server. Check your connection and try again.',
-  TIMEOUT: `The server didn't respond within ${REQUEST_TIMEOUT_MS / 1000}s. It may still be waking up. Try again.`,
-  SERVER_ERROR: 'Something went wrong on the server. Please try again.',
+  // RTC-UI-01 (spec §2A friendly error map): user-facing wording, codes unchanged.
+  NETWORK_ERROR: "Couldn't connect. Check your internet connection and try again.",
+  TIMEOUT: 'This is taking longer than usual. Check your connection and try again.',
+  SERVER_ERROR: 'Something went wrong. Please try again.',
+  BAD_RESPONSE: 'Something went wrong. Please try again.',
 };
 
 
@@ -88,18 +93,22 @@ export async function apiRequest(path, { method = 'GET', body, auth = true, sign
   if (!res.ok) {
     const e = data?.error;
     // LOCKED hardening: RATE_LIMITED (HTTP 429). Always show the agreed text, even without a JSON body.
+    // Retry-After (whole seconds) drives the auth-form countdown. Native fetch has no CORS, so the
+    // header is always readable on the APK (react-native-web in a browser needs it exposed).
     if (res.status === 429 || e?.code === 'RATE_LIMITED') {
-      throw new ApiError({ status: res.status, code: 'RATE_LIMITED', message: RATE_LIMITED_MESSAGE, field: e?.field });
+      const retryAfterMs = parseRetryAfter(res.headers?.get?.('Retry-After'));
+      throw new ApiError({ status: res.status, code: 'RATE_LIMITED', message: RATE_LIMITED_MESSAGE, field: e?.field, retryAfterMs });
     }
     throw new ApiError({
       status: res.status,
       code: e?.code || (res.status >= 500 ? 'SERVER_ERROR' : `HTTP_${res.status}`),
-      message: e?.message || FALLBACK_MESSAGES[res.status >= 500 ? 'SERVER_ERROR' : ''] || `Request failed (HTTP ${res.status})`,
+      // 5xx always gets the friendly text (a server's own 500 message may mention internals).
+      message: res.status >= 500 ? FALLBACK_MESSAGES.SERVER_ERROR : e?.message || `Request failed (HTTP ${res.status})`,
       field: e?.field,
     });
   }
   if (data === null) {
-    throw new ApiError({ status: res.status, code: 'BAD_RESPONSE', message: 'Unexpected response from the server.' });
+    throw new ApiError({ status: res.status, code: 'BAD_RESPONSE', message: FALLBACK_MESSAGES.BAD_RESPONSE });
   }
   return data;
 }

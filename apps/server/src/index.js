@@ -2,7 +2,7 @@
 
 require('dotenv').config();
 
-const { loadConfig } = require('./config');
+const { loadConfig, assertProductionConfig, assertValidConfig } = require('./config');
 const { connectMongo, disconnectMongo } = require('./db');
 const { createApp } = require('./app');
 
@@ -14,6 +14,14 @@ async function main() {
       '[config] JWT_SECRET is unset — /auth/* and data routes will answer 500 SERVER_ERROR and all sockets are refused'
     );
   }
+
+  // Fails fast (before connecting to Mongo) if NODE_ENV=production and no CLIENT_ORIGINS.
+  assertProductionConfig(config);
+  assertValidConfig(config);
+  console.log(
+    `[config] client IP: trust proxy hops=${config.trustProxyHops} (${config.clientIpSource.trustProxyHops}), ` +
+      `header=${config.clientIpHeader || '(none, req.ip)'} (${config.clientIpSource.clientIpHeader})`
+  );
 
   await connectMongo(config.mongodbUri);
 

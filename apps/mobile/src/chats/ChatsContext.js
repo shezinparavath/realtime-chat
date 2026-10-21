@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { SEND_ACK_TIMEOUT_MS } from '../config';
-import { RATE_LIMITED_MESSAGE, createOrGetChat, fetchMessages, listChats } from '../lib/api';
+import { createOrGetChat, fetchMessages, listChats } from '../lib/api';
+import { RATE_LIMITED_MESSAGE, normalizeRetryAfterMs } from '../lib/rateLimit';
 import { newClientId } from '../lib/uuid';
 import { useSocketContext } from '../socket/SocketContext';
 import { initialState, isRetryableSendCode, reducer, validateMessageText } from './chatStore';
@@ -41,12 +42,13 @@ export function ChatsProvider({ children }) {
     try {
       const { chats } = await listChats({ signal: controller.signal, onSlow: () => dispatch({ type: 'LIST', patch: { slow: true } }) });
       dispatch({ type: 'CHATS_UPSERT', chats: chats || [] });
-      dispatch({ type: 'LIST', patch: { status: 'ok', error: null, slow: false } });
+      dispatch({ type: 'LIST', patch: { status: 'ok', error: null, slow: false, stale: false } });
       return chats || [];
     } catch (err) {
-      if (controller.signal.aborted || err.status === 401) return null;
-      // A failed background refresh keeps the list we already have.
-      if (!background || stateRef.current.list.status !== 'ok') dispatch({ type: 'LIST', patch: { status: 'error', error: err.message, slow: false } });
+      if (controller.signal.aborted || err.status === 401) return null; // 401: the auth handler logs out
+      // A failed background refresh keeps the list we already have and flags it stale (notice + Retry).
+      if (background && stateRef.current.list.status === 'ok') dispatch({ type: 'LIST', patch: { stale: true, slow: false } });
+      else dispatch({ type: 'LIST', patch: { status: 'error', error: err.message, slow: false } });
       throw err;
     }
   }, []);
@@ -77,7 +79,11 @@ export function ChatsProvider({ children }) {
       dispatch({ type: 'PAGE', chatId, mode: 'newest', messages: page.messages || [], hasMore: !!page.hasMore });
     } catch (err) {
       if (controller.signal.aborted || err.status === 401) return;
-      if (refresh && stateRef.current.threads[chatId]?.status === 'ok') return; // keep what we have
+      if (refresh && stateRef.current.threads[chatId]?.status === 'ok') {
+        // Keep the cached thread; flag it stale so the UI shows "Couldn't refresh." + Retry.
+        dispatch({ type: 'THREAD', chatId, patch: { stale: true, slow: false } });
+        return;
+      }
       dispatch({ type: 'THREAD', chatId, patch: { status: 'error', error: err.message, errorStatus: err.status, slow: false } });
     }
   }, []);
@@ -103,17 +109,18 @@ export function ChatsProvider({ children }) {
   // ---- sending (socket only, ruling P3-1; ack-or-fail, no queue, ruling P4-2) ----
   const emitAttempt = useCallback((chatId, clientId, text) => {
     const attemptId = nextAttemptId();
-    dispatch({ type: 'PENDING_UPSERT', chatId, item: { clientId, attemptId, text, status: 'sending', error: null, code: null, retryable: false } });
-    const fail = (code, error) => dispatch({ type: 'PENDING_FAIL', chatId, clientId, attemptId, code, error, retryable: isRetryableSendCode(code) });
+    dispatch({ type: 'PENDING_UPSERT', chatId, item: { clientId, attemptId, text, status: 'sending', error: null, code: null, retryable: false, retryAt: null } });
+    const fail = (code, error, retryAt = null) =>
+      dispatch({ type: 'PENDING_FAIL', chatId, clientId, attemptId, code, error, retryable: isRetryableSendCode(code), retryAt });
     const s = socketRef.current;
     if (!s || !s.connected) {
       // Socket.IO would buffer this emit until reconnect; the ruling says no queue, so fail now.
-      fail('DISCONNECTED', 'Not connected. Check your connection and retry.');
+      fail('DISCONNECTED', 'Not sent: no connection.');
       return;
     }
     s.timeout(SEND_ACK_TIMEOUT_MS).emit('message:send', { chatId, text, clientId }, (err, ack) => {
       if (err) {
-        fail('TIMEOUT', 'No response from the server.');
+        fail('TIMEOUT', 'Not sent: no confirmation received.');
         return;
       }
       if (ack?.ok && ack.message) {
@@ -121,7 +128,14 @@ export function ChatsProvider({ children }) {
         return;
       }
       const code = ack?.error?.code || 'SERVER_ERROR';
-      fail(code, code === 'RATE_LIMITED' ? RATE_LIMITED_MESSAGE : ack?.error?.message || 'The message was not sent.');
+      if (code === 'RATE_LIMITED') {
+        // Hardening ruling: the ack carries error.retryAfterMs; Retry stays disabled until it passes.
+        const ms = normalizeRetryAfterMs(ack?.error?.retryAfterMs);
+        fail(code, RATE_LIMITED_MESSAGE, ms ? Date.now() + ms : null);
+        return;
+      }
+      // RTC-UI-01: a server-side failure never shows the server's own wording.
+      fail(code, code === 'SERVER_ERROR' ? 'Something went wrong. Please try again.' : ack?.error?.message || 'The message was not sent.');
     });
   }, []);
 
@@ -136,7 +150,7 @@ export function ChatsProvider({ children }) {
   /** Retry reuses the same clientId, so the server dedupes if the first attempt actually landed. */
   const retryMessage = useCallback((chatId, clientId) => {
     const p = (stateRef.current.pending[chatId] || []).find((x) => x.clientId === clientId);
-    if (p && p.status === 'failed' && p.retryable) emitAttempt(chatId, clientId, p.text);
+    if (p && p.status === 'failed' && p.retryable && !(p.retryAt && p.retryAt > Date.now())) emitAttempt(chatId, clientId, p.text);
   }, [emitAttempt]);
 
   const discardMessage = useCallback((chatId, clientId) => dispatch({ type: 'PENDING_REMOVE', chatId, clientId }), []);
@@ -148,7 +162,7 @@ export function ChatsProvider({ children }) {
     const onNew = (payload) => {
       if (payload?.message?.id) dispatch({ type: 'LIVE_MESSAGE', message: payload.message, chat: payload.chat, meId });
     };
-    const onDisconnect = () => dispatch({ type: 'FAIL_ALL_SENDING', error: 'Connection lost before the server confirmed. Retry?' });
+    const onDisconnect = () => dispatch({ type: 'FAIL_ALL_SENDING', error: 'Not sent: connection lost.' });
     const onConnect = () => {
       connects += 1;
       if (connects === 1) return; // first connect: pages load normally
