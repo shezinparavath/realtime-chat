@@ -119,7 +119,7 @@ function chatsRouter(config, presence = null) {
         throw err;
       }
       const created = await loadChat({ pairKey });
-      // Presence (RTC-N1-04): a newly created chat tells the creator's sockets the other user's status.
+      // Presence (RTC-N1-04): a newly created chat tells both participants each other's status.
       if (presence) presence.chatCreated(me, userId.toLowerCase());
       return res.status(201).json({ chat: toChat(created) });
     })

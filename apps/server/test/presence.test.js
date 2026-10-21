@@ -142,30 +142,66 @@ describe('presence (RTC-N1-04)', () => {
     assert.deepEqual(bobS.presence, []);
   });
 
-  it('new chat: the creator gets presence for the other user (online and offline); existing chat → nothing', async () => {
+  it('new chat (201): both sides get presence for each other; non-participant and existing chat (200) get nothing', async () => {
     const dave = await user('na');
     const erin = await user('nb');
     const fred = await user('nc'); // stays offline
+    const gina = await user('nd'); // online, not a participant
     const daveS = await connect(dave);
+    const daveTab2 = await connect(dave);
     const erinS = await connect(erin);
+    const ginaS = await connect(gina);
     await sleep(100);
     assert.deepEqual(daveS.presence, [], 'no chat yet → no presence');
+    assert.deepEqual(erinS.presence, []);
+
     const r = await chat(dave, erin);
     assert.equal(r.status, 201);
     await sleep(100);
-    assert.deepEqual(daveS.presence, [{ userId: erin.user.id, online: true }]);
-    assert.deepEqual(erinS.presence, [], 'contract: creator only');
-    const r2 = await chat(dave, erin);
+    assert.deepEqual(daveS.presence, [{ userId: erin.user.id, online: true }], 'creator learns the other user');
+    assert.deepEqual(daveTab2.presence, [{ userId: erin.user.id, online: true }], "all of the creator's tabs");
+    assert.deepEqual(erinS.presence, [{ userId: dave.user.id, online: true }], 'other user learns the creator');
+    assert.deepEqual(ginaS.presence, [], 'non-participant gets nothing');
+
+    const r2 = await chat(erin, dave); // existing chat, opened from the other side
     assert.equal(r2.status, 200);
     await sleep(100);
     assert.equal(daveS.presence.length, 1, 'opening an existing chat emits nothing');
+    assert.equal(erinS.presence.length, 1);
+
+    // New chat with an offline user: creator gets online:false; nobody else is told.
     const r3 = await chat(dave, fred);
     assert.equal(r3.status, 201);
     await sleep(100);
     assert.deepEqual(daveS.presence.at(-1), { userId: fred.user.id, online: false });
+    assert.equal(erinS.presence.length, 1);
+    assert.deepEqual(ginaS.presence, []);
+
     // New partner is picked up for later transitions (no stale cache): erin going offline reaches dave.
     await close(erinS);
     await sleep(GRACE + 150);
     assert.deepEqual(daveS.presence.at(-1), { userId: erin.user.id, online: false });
+    assert.deepEqual(ginaS.presence, []);
+  });
+
+  it('a user inside the 5 s grace counts as online everywhere (snapshot and new-chat event)', async () => {
+    const hal = await user('ha');
+    const ivy = await user('hb');
+    const jon = await user('hc');
+    await chat(hal, ivy);
+    const halS = await connect(hal);
+    const jonS = await connect(jon);
+    await close(halS); // hal is now inside the grace
+    await sleep(GRACE / 3);
+    const ivyS = connectSocket(srv.url, ivy.token);
+    sockets.push(ivyS);
+    assert.deepEqual(await once(ivyS, 'presence:snapshot'), { online: [hal.user.id] }, 'snapshot');
+    jonS.presence.length = 0;
+    const r = await chat(jon, hal);
+    assert.equal(r.status, 201);
+    await sleep(50);
+    assert.deepEqual(jonS.presence, [{ userId: hal.user.id, online: true }], 'new-chat event');
+    await sleep(GRACE + 150);
+    assert.deepEqual(jonS.presence.at(-1), { userId: hal.user.id, online: false }, 'offline after the grace');
   });
 });

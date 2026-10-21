@@ -17,7 +17,9 @@ const Chat = require('../models/Chat');
  *   are picked up immediately). Never sent to the user themself.
  * - `presence:snapshot { online: [userIds] }` goes to a connecting socket,
  *   limited to its chat partners.
- * - New chat: the creator's `user:` room gets `presence { userId: other, online }`.
+ * - New chat (201): both sides learn each other's status: the creator's `user:`
+ *   room gets `presence { userId: other, online }` and the other user's room gets
+ *   `presence { userId: creator, online }`.
  * Nothing is persisted. State is per createApp() instance and resets on restart.
  */
 function createPresence({ graceMs }) {
@@ -87,9 +89,11 @@ function createPresence({ graceMs }) {
     offlineTimers.set(userId, timer);
   }
 
-  /** New chat created by creatorId with otherId: tell the creator's sockets. */
+  /** New chat created by creatorId with otherId: tell both sides about each other. */
   function chatCreated(creatorId, otherId) {
-    if (io) io.to(`user:${creatorId}`).emit('presence', { userId: otherId, online: isOnline(otherId) });
+    if (!io) return;
+    io.to(`user:${creatorId}`).emit('presence', { userId: otherId, online: isOnline(otherId) });
+    io.to(`user:${otherId}`).emit('presence', { userId: creatorId, online: isOnline(creatorId) });
   }
 
   function attach(server) {
