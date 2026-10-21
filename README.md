@@ -3,7 +3,7 @@
 A one-to-one real-time chat app with a React web client and an Android (Expo) client. Both share one Node.js + Socket.IO backend and a MongoDB database.
 
 - **Web:** https://realtime-chat-web-orcin.vercel.app
-- **Android APK:** https://expo.dev/artifacts/eas/CJyRh88ZlvdpkdUFE_jRoJBKpQg2UTtqY4RTVQkEKvM.apk
+- **Android APK:** https://expo.dev/artifacts/eas/_8aMhFcNs0YqbAziJnN73nhQiFPQkEQaiC7ugxW_MVE.apk
 
 > The first load can take up to about 50 s while the free backend server wakes up.
 
