@@ -9,6 +9,7 @@ import { Button, ErrorBlock, SlowState, Status } from '../components/ui';
 import { API_URL_MISSING } from '../config';
 import { useHealth } from '../useHealth';
 import { SocketProvider } from '../socket/SocketContext';
+import { PushManager } from '../push/PushManager';
 import { colors } from '../theme';
 
 /**
@@ -58,6 +59,7 @@ function Root() {
       </Stack>
       {status === 'booting' || status === 'checking' || status === 'unverified' ? <SessionGate /> : null}
       <SocketStatusHook />
+      <PushManager />
       {API_URL_MISSING ? (
         // Build misconfiguration only (never in a correctly built APK); used to live in the footer.
         <Text style={st.configError} accessibilityRole="alert">
