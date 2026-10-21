@@ -11,6 +11,7 @@ import { useCountdown } from '../hooks/useCountdown.js';
 import { rateLimitedMessage } from '../lib/rateLimit.js';
 import { navigate } from '../router.js';
 import { useSocketContext } from '../socket/SocketContext.jsx';
+import { TYPING_AT_BOTTOM_PX, typingBubbleGap } from '../lib/typing.js';
 import { useRemoteTyping, useTypingEmitter } from '../hooks/useTyping.js';
 import { formatClock } from '../components/time.js';
 import { MAX_MESSAGE_LENGTH } from '../config.js';
@@ -138,7 +139,7 @@ export function ChatPage({ chatId, suppressSlow = false, onSlowChange }) {
       {!notFound && !forbidden && chat && (
         <>
           {thread?.status === 'ok' && thread.stale && <StaleNotice onRetry={() => loadNewest(chatId, { refresh: true })} testId="thread-stale" />}
-          <Thread chatId={chatId} meId={user?.id} otherName={other?.username} suppressSlow={suppressSlow} />
+          <Thread chatId={chatId} meId={user?.id} otherName={other?.username} suppressSlow={suppressSlow} typing={otherTyping} otherId={other?.id} />
           <Composer chatId={chatId} suppressSlow={threadSlow || suppressSlow} />
         </>
       )}
@@ -146,12 +147,12 @@ export function ChatPage({ chatId, suppressSlow = false, onSlowChange }) {
   );
 }
 
-function Thread({ chatId, meId, otherName, suppressSlow = false }) {
+function Thread({ chatId, meId, otherName, suppressSlow = false, typing = false, otherId = null }) {
   const { threads, pending, loadNewest, loadOlder, retryMessage, discardMessage } = useChats();
   const t = threads[chatId];
   const mine = pending[chatId] || [];
   const scrollRef = useRef(null);
-  const prev = useRef({ firstId: null, lastKey: null, scrollHeight: 0, scrollTop: 0, nearBottom: true });
+  const prev = useRef({ firstId: null, lastKey: null, scrollHeight: 0, scrollTop: 0, nearBottom: true, typing: false });
 
   const messages = t?.messages || [];
   // RTC-UI-04: grouping + day separators (spec §7.3), the same pure helper as mobile.
@@ -169,8 +170,14 @@ function Thread({ chatId, meId, otherName, suppressSlow = false }) {
       el.scrollTop = el.scrollHeight - p.scrollHeight + p.scrollTop;
     } else if (lastKey !== p.lastKey && (p.nearBottom || !p.lastKey || mine.length > 0)) {
       el.scrollTop = el.scrollHeight;
+    } else if (typing !== p.typing) {
+      // RTC-N1-06 (ruling 11:47 #2): the bubble sits below the last message. Within 80 px of the end,
+      // follow it (and closing the gap when it hides is fine); further up, nothing moves: scrollTop is
+      // kept and only content below the viewport changes.
+      if (p.scrollHeight - p.scrollTop - el.clientHeight <= TYPING_AT_BOTTOM_PX) el.scrollTop = el.scrollHeight;
+      else el.scrollTop = p.scrollTop;
     }
-    prev.current = { firstId, lastKey, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, nearBottom: isNearBottom(el) };
+    prev.current = { firstId, lastKey, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, nearBottom: isNearBottom(el), typing };
   });
 
   // If the first page doesn't fill the box, there's nothing to scroll; pull older pages until it does.
@@ -290,6 +297,7 @@ function Thread({ chatId, meId, otherName, suppressSlow = false }) {
               );
             })}
           </ol>
+          {typing && <TypingBubble floating={messages.length === 0 && mine.length === 0} gap={typingBubbleGap(mine.length ? { senderId: meId } : messages[messages.length - 1], otherId)} />}
         </>
       )}
       </div>
@@ -390,12 +398,19 @@ function Composer({ chatId, suppressSlow = false }) {
 
   function submit(e) {
     e?.preventDefault();
-    const invalid = sendMessage(chatId, text);
+    // RTC-N1-06 ruling 3: the typing false is sent when this send settles (see createTypingEmitter.sent).
+    let settled = false;
+    let settle = null;
+    const invalid = sendMessage(chatId, text, () => {
+      settled = true;
+      settle?.();
+    });
     if (invalid) {
       setError(invalid.message);
       return;
     }
-    typing.stop();
+    settle = typing.sent();
+    if (settled) settle();
     setText('');
     setError(null);
     inputRef.current?.focus(); // focus stays in the input after a send (also from the Send button)
@@ -447,7 +462,7 @@ function Composer({ chatId, suppressSlow = false }) {
             setError(null);
             typing.input(chatId, e.target.value);
           }}
-          onBlur={() => typing.stop()}
+          onBlur={() => typing.blur()}
           onKeyDown={onKeyDown}
           aria-invalid={over ? 'true' : undefined}
           aria-describedby="composer-counter composer-error"
@@ -473,5 +488,22 @@ function Composer({ chatId, suppressSlow = false }) {
         </span>
       </div>
     </form>
+  );
+}
+
+/**
+ * RTC-N1-06: incoming-style bubble with three dots while the other participant is typing. Decorative
+ * (aria-hidden): the header "typing…" status is the accessible announcement. The dots animate in CSS and
+ * are static under prefers-reduced-motion.
+ */
+function TypingBubble({ gap, floating = false }) {
+  // Always stands alone (no timestamp, full radius); 4 px gap after the typer's own message, else 12 px.
+  // Empty thread: it floats at the bottom so the centred "No messages yet" block doesn't move.
+  return (
+    <div className={`typing-bubble${floating ? ' floating' : ''}`} data-testid="typing-bubble" data-gap={gap} style={{ marginTop: gap }} aria-hidden="true">
+      <span className="typing-dot" />
+      <span className="typing-dot" />
+      <span className="typing-dot" />
+    </div>
   );
 }

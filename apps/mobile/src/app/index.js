@@ -8,6 +8,7 @@ import { useChats } from '../chats/ChatsContext';
 import { chatPreview, otherParticipant } from '../chats/participants';
 import { badgeText, unreadLabel } from '../chats/unread';
 import { rowLabel } from '../lib/presence';
+import { typingIn } from '../lib/typing.js';
 import { Avatar } from '../components/Avatar';
 import { ReconnectingBar } from '../components/ConnectionBars';
 import { KeyboardAvoider } from '../components/KeyboardAvoider';
@@ -192,7 +193,7 @@ function SearchResults({ input }) {
 function ChatList() {
   const router = useRouter();
   const { user } = useAuth();
-  const { sortedChats, listState, loadChats, unread, online } = useChats();
+  const { sortedChats, listState, loadChats, unread, online, typingByChat } = useChats();
   const [refreshing, setRefreshing] = useState(false);
 
   // Load on first focus, and refetch in the background every time the list regains focus (coming
@@ -254,11 +255,14 @@ function ChatList() {
             const preview = chatPreview(c, user?.id);
             const isOnline = !!other?.id && online.has(other.id); // RTC-N1-05
             const count = unread[c.id] || 0; // RTC-N1-03
+            // RTC-N1-06: "typing…" replaces the preview (same line, same height) while the other user types.
+            const rowTyping = !!other?.id && typingIn(typingByChat, c.id, other.id);
+            const shownPreview = rowTyping ? 'typing…' : preview;
             return (
               <Pressable
                 onPress={() => router.push({ pathname: '/chat/[id]', params: { id: c.id } })}
                 accessibilityRole="button"
-                accessibilityLabel={`${rowLabel(`Chat with @${other?.username ?? 'unknown'}`, { online: isOnline, unreadText: count ? unreadLabel(count) : null })}. ${preview}`}
+                accessibilityLabel={`${rowLabel(`Chat with @${other?.username ?? 'unknown'}`, { online: isOnline, unreadText: count ? unreadLabel(count) : null })}. ${shownPreview}`}
                 style={({ pressed }) => [st.chatRow, pressed && { backgroundColor: colors.surfaceMuted }]}
                 testID={`chat-row-${other?.username}`}
               >
@@ -273,9 +277,15 @@ function ChatList() {
                     </Text>
                   </View>
                   <View style={st.chatRowBottom}>
-                    <Text style={[st.preview, st.previewFlex, !c.lastMessage && st.previewEmpty]} numberOfLines={1} ellipsizeMode="tail" testID="chat-preview">
-                      {preview}
-                    </Text>
+                    {rowTyping ? (
+                      <Text style={[st.preview, st.previewFlex, st.previewTyping]} numberOfLines={1} testID="row-typing">
+                        typing…
+                      </Text>
+                    ) : (
+                      <Text style={[st.preview, st.previewFlex, !c.lastMessage && st.previewEmpty]} numberOfLines={1} ellipsizeMode="tail" testID="chat-preview">
+                        {preview}
+                      </Text>
+                    )}
                     {count > 0 ? (
                       <View style={st.badge} testID="unread-badge" dataSet={{ count: String(count) }}>
                         <Text style={st.badgeText}>{badgeText(count)}</Text>
@@ -308,6 +318,8 @@ const st = StyleSheet.create({
   time: { ...type.caption, color: colors.textMuted, flexShrink: 0 },
   preview: { ...type.secondary, color: colors.textMuted },
   previewEmpty: { fontStyle: 'italic' },
+  // RTC-N1-06: colors.primary on surface 6.7:1, on the pressed surfaceMuted 5.6:1.
+  previewTyping: { fontStyle: 'italic', color: colors.primary },
   // RTC-N1-03: unread pill, primary / onPrimary (6.70:1), type.badge 11/14 700.
   chatRowBottom: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   previewFlex: { flex: 1, minWidth: 0 },

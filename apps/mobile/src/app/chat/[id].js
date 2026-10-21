@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AuthedOnly } from '../../auth/AuthedOnly';
@@ -9,6 +9,8 @@ import { validateMessageText } from '../../chats/chatStore';
 import { buildThreadItems } from '../../chats/threadItems';
 import { ReconnectingBar } from '../../components/ConnectionBars';
 import { PresenceDot } from '../../components/Avatar';
+import { TypingBubble, typingSlotHeight } from '../../components/TypingBubble';
+import { TYPING_AT_BOTTOM_PX, typingBubbleGap } from '../../lib/typing.js';
 import { useRemoteTyping, useTypingEmitter } from '../../hooks/useTyping';
 import { KeyboardAvoider } from '../../components/KeyboardAvoider';
 import { SkeletonBubbles } from '../../components/Skeleton';
@@ -120,7 +122,7 @@ function ChatScreen() {
         {!notFound && !forbidden && chat && (
           <>
             {thread?.status === 'ok' && thread.stale && <StaleNotice onRetry={() => loadNewest(chatId, { refresh: true })} testID="thread-stale" />}
-            <Thread chatId={chatId} meId={user?.id} otherName={other?.username} />
+            <Thread chatId={chatId} meId={user?.id} otherName={other?.username} typing={otherTyping} otherId={other?.id} />
             <Composer chatId={chatId} suppressSlow={!!(thread && ((thread.status === 'loading' && thread.slow) || (thread.olderLoading && thread.olderSlow)))} />
           </>
         )}
@@ -158,7 +160,7 @@ function HeaderTitle({ title, name, online, typing }) {
   );
 }
 
-function Thread({ chatId, meId, otherName }) {
+function Thread({ chatId, meId, otherName, typing = false, otherId = null }) {
   const { threads, pending, loadNewest, loadOlder, retryMessage, discardMessage } = useChats();
   const t = threads[chatId];
   const mine = pending[chatId];
@@ -167,6 +169,34 @@ function Thread({ chatId, meId, otherName }) {
   // RTC-UI-04: rows carry grouping (first/last) and day separators (spec §7.3).
   const items = useMemo(() => buildThreadItems(messages || [], mine || [], meId), [messages, mine, meId]);
   const lastIncoming = useMemo(() => [...(messages || [])].reverse().find((m) => m.senderId !== meId), [messages, meId]);
+
+  // RTC-N1-06: the bubble is the list header (visual bottom of the inverted list). At the bottom the list
+  // stays at offset 0, so the bubble is followed; while reading history, shift the offset by the fixed slot
+  // height so nothing visible moves when it appears or disappears. Other scroll behaviour is unchanged.
+  const listRef = useRef(null);
+  const offset = useRef(0);
+  const shownRef = useRef(typing);
+  const shownSlot = useRef(0); // height the bubble slot had when shown (subtracted again on hide)
+  const listReady = !!t && t.status === 'ok' && items.length > 0;
+  const lastMsg = mine?.length ? { senderId: meId } : messages?.[messages.length - 1];
+  const gap = typingBubbleGap(lastMsg, otherId);
+  useLayoutEffect(() => {
+    if (shownRef.current === typing) return;
+    shownRef.current = typing;
+    const slot = typing ? typingSlotHeight(gap) : shownSlot.current;
+    shownSlot.current = typing ? slot : 0;
+    if (!listReady || !listRef.current) return;
+    const off = offset.current;
+    if (off <= TYPING_AT_BOTTOM_PX) {
+      // Within 80 px of the end: follow the bubble; closing the gap on hide is fine (ruling 11:47 #2).
+      if (typing && off > 0) listRef.current.scrollToOffset({ offset: 0, animated: false });
+      return;
+    }
+    // Reading history: shift by exactly the slot so nothing visible moves.
+    const next = Math.max(0, off + (typing ? slot : -slot));
+    offset.current = next;
+    listRef.current.scrollToOffset({ offset: next, animated: false });
+  }, [typing, listReady]);
 
   if (!t || t.status === 'loading') {
     return (
@@ -196,6 +226,11 @@ function Thread({ chatId, meId, otherName }) {
     return (
       <View style={{ flex: 1, justifyContent: 'center' }}>
         <StateBlock title="No messages yet" body={`Send the first message to @${otherName ?? 'unknown'}.`} testID="thread-empty" />
+        {typing ? (
+          <View style={{ position: 'absolute', left: 12, bottom: 8 }}>
+            <TypingBubble gap={0} />
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -211,8 +246,15 @@ function Thread({ chatId, meId, otherName }) {
         <Text>{lastIncoming ? `@${otherName}: ${lastIncoming.text}` : ''}</Text>
       </View>
       <FlatList
+        ref={listRef}
         inverted
         data={items}
+        onScroll={(e) => {
+          offset.current = e.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
+        // RTC-N1-06: in an inverted list the header renders at the visual bottom (below the newest message).
+        ListHeaderComponent={typing ? <TypingBubble gap={gap} /> : null}
         keyExtractor={(item) => item.key}
         onEndReached={maybeLoadOlder}
         onEndReachedThreshold={0.3}
@@ -364,12 +406,19 @@ function Composer({ chatId, suppressSlow = false }) {
   const blank = !text.trim();
 
   function submit() {
-    const invalid = sendMessage(chatId, text);
+    // RTC-N1-06 ruling 3: the typing false is sent when this send settles (see createTypingEmitter.sent).
+    let settled = false;
+    let settle = null;
+    const invalid = sendMessage(chatId, text, () => {
+      settled = true;
+      settle?.();
+    });
     if (invalid) {
       setError(invalid.message);
       return;
     }
-    typing.stop();
+    settle = typing.sent();
+    if (settled) settle();
     setText('');
     setError(null);
   }
@@ -412,7 +461,7 @@ function Composer({ chatId, suppressSlow = false }) {
             setError(null);
             typing.input(chatId, v);
           }}
-          onBlur={() => typing.stop()}
+          onBlur={() => typing.blur()}
           placeholder="Write a message…"
           placeholderTextColor={colors.textMuted}
           multiline

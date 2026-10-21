@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { createTypingEmitter, createTypingReceiver, socketTypingEmit } from '../lib/typing.js';
+import { useEffect, useRef } from 'react';
+import { createTypingEmitter, socketTypingEmit, typingIn } from '../lib/typing.js';
+import { useChats } from '../chats/ChatsContext.jsx';
 import { useSocketContext } from '../socket/SocketContext.jsx';
 
 /**
@@ -28,26 +29,12 @@ export function useTypingEmitter() {
   return ref.current;
 }
 
-/** RTC-N1-02 receiver: true while the other participant of the open chat is typing. */
-export function useRemoteTyping(chatId, otherId, meId) {
-  const { socket } = useSocketContext();
-  const [shown, setShown] = useState(false);
-  useEffect(() => {
-    setShown(false);
-    if (!socket || !chatId || !otherId) return undefined;
-    const r = createTypingReceiver({ chatId, otherId, meId, onChange: setShown });
-    const onTyping = (p) => r.typing(p);
-    const onMessage = (p) => r.message(p);
-    const onDisconnect = () => r.disconnect();
-    socket.on('typing', onTyping);
-    socket.on('message:new', onMessage);
-    socket.on('disconnect', onDisconnect);
-    return () => {
-      socket.off('typing', onTyping);
-      socket.off('message:new', onMessage);
-      socket.off('disconnect', onDisconnect);
-      r.dispose();
-    };
-  }, [socket, chatId, otherId, meId]);
-  return shown;
+/**
+ * RTC-N1-02 receiver: true while the other participant of the open chat is typing. Since RTC-N1-06 it
+ * reads the open chat's entry of the per-chat typing map (ChatsContext), so the header, the bubble and
+ * the list row share one state (same 5 s expiry, message and disconnect clears).
+ */
+export function useRemoteTyping(chatId, otherId) {
+  const { typingByChat } = useChats();
+  return !!chatId && !!otherId && typingIn(typingByChat, chatId, otherId);
 }
