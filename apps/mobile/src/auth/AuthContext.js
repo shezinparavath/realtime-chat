@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../lib/api';
 import { clearToken, loadToken, saveToken } from '../lib/tokenStore';
+import { unregisterPush } from '../push/push';
 
 /**
  * Auth state machine (same as web):
@@ -38,6 +39,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback((reason) => {
+    // RTC-N2-02: best-effort DELETE /me/push-token while the token is still set (not awaited; an
+    // expired session can't authenticate it, so skip that case).
+    if (reason !== 'expired') unregisterPush();
     clearToken();
     tokenRef.current = null;
     setToken(null);

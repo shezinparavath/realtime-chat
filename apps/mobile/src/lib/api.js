@@ -136,3 +136,15 @@ export const fetchMessages = (chatId, { before, limit = MESSAGES_PAGE_SIZE, ...o
   if (before) query += `&before=${encodeURIComponent(before)}`;
   return apiRequest(`/chats/${encodeURIComponent(chatId)}/messages?${query}`, opts);
 };
+
+/** RTC-N2-02: register this device's Expo push token (contract: POST /me/push-token { token }, auth). */
+export function postPushToken(token) {
+  return apiRequest('/me/push-token', { method: 'POST', body: { token } });
+}
+/**
+ * RTC-N2-02: unregister on logout (DELETE /me/push-token { token }, auth). The Authorization header is
+ * read synchronously when this is called, so call it BEFORE the session token is cleared.
+ */
+export function deletePushToken(token) {
+  return apiRequest('/me/push-token', { method: 'DELETE', body: { token } });
+}
