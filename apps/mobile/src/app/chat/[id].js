@@ -387,8 +387,8 @@ function Composer({ chatId, suppressSlow = false }) {
           testID="send"
         />
       </View>
-      <View style={metaShown ? st.meta : st.metaHidden} testID="composer-meta">
-        <Text style={st.metaError} accessibilityLiveRegion="assertive" testID="composer-error">
+      <View style={metaShown ? st.composerMeta : st.composerMetaHidden} testID="composer-meta">
+        <Text style={st.composerMetaError} accessibilityLiveRegion="assertive" testID="composer-error">
           {inlineError || ''}
         </Text>
         {counterShown ? (
@@ -420,9 +420,10 @@ const st = StyleSheet.create({
   composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   composerInput: { flex: 1, maxHeight: 156, minHeight: 44, ...type.body, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10, borderRadius: radius.md },
   send: { minWidth: 72, borderRadius: radius.md },
-  meta: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 },
-  metaHidden: { flexDirection: 'row', height: 0, overflow: 'hidden' },
-  metaError: { flex: 1, ...type.caption, color: colors.danger },
+  // DEF-008: the composer row keys were `meta*`, and this second `meta` replaced the bubble time style above.
+  composerMeta: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 },
+  composerMetaHidden: { flexDirection: 'row', height: 0, overflow: 'hidden' },
+  composerMetaError: { flex: 1, ...type.caption, color: colors.danger },
   counter: { ...type.caption, color: colors.textMuted },
   counterOver: { color: colors.danger, fontWeight: '600' },
   notice: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 8, marginBottom: 4 },
