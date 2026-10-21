@@ -147,3 +147,69 @@ describe('typing indicator relay (RTC-N1-01)', () => {
     await ok;
   });
 });
+
+describe('typing guard and message:send limit are independent (post-hardening merge)', () => {
+  let srv;
+  let alice;
+  let bob;
+  let chatId;
+  const sockets = [];
+  const { emitAck } = require('./helpers');
+  const C = require('../src/constants');
+
+  before(async () => {
+    // Real (LOCKED) send limit: 10 per 10 s per socket.
+    srv = await startServer({ rateLimits: { sendMax: C.SEND_RATE_MAX, sendWindowMs: C.SEND_RATE_WINDOW_MS } });
+    alice = await signup(request, srv.app, { email: 'alice2@example.com', username: 'alice2' });
+    bob = await signup(request, srv.app, { email: 'bob2@example.com', username: 'bob2' });
+    const res = await request(srv.app)
+      .post('/chats')
+      .set('Authorization', `Bearer ${alice.token}`)
+      .send({ userId: bob.user.id })
+      .expect(201);
+    chatId = res.body.chat.id;
+  });
+
+  after(async () => {
+    sockets.forEach((s) => s.close());
+    await srv.stop();
+  });
+
+  async function connect(u) {
+    const s = connectSocket(srv.url, u.token);
+    sockets.push(s);
+    await once(s, 'hello');
+    return s;
+  }
+
+  it('typing events do not use message:send budget; exhausted send budget does not block typing', async () => {
+    const aliceSock = await connect(alice);
+    const bobSock = await connect(bob);
+    const seen = [];
+    bobSock.on('typing', (e) => seen.push(e));
+
+    // Fill the typing window (10/s) first, then all 10 sends must still be accepted.
+    for (let i = 0; i < TYPING_MAX_EVENTS; i += 1) aliceSock.emit('typing', { chatId, isTyping: true });
+    for (let i = 0; i < C.SEND_RATE_MAX; i += 1) {
+      const ack = await emitAck(aliceSock, 'message:send', { chatId, text: `m${i}` });
+      assert.equal(ack.ok, true, `send ${i} accepted despite typing traffic`);
+    }
+    const over = await emitAck(aliceSock, 'message:send', { chatId, text: 'over' });
+    assert.equal(over.ok, false);
+    assert.equal(over.error.code, 'RATE_LIMITED');
+    assert.ok(Number.isInteger(over.error.retryAfterMs) && over.error.retryAfterMs > 0);
+
+    // Send budget is exhausted; after the 1 s typing window, typing still relays.
+    await sleep(1100);
+    const before = seen.length;
+    aliceSock.emit('typing', { chatId, isTyping: false });
+    await sleep(200);
+    assert.equal(seen.length, before + 1, 'typing relayed while message:send is rate-limited');
+    assert.deepEqual(seen[seen.length - 1], { chatId, userId: alice.user.id, isTyping: false });
+  });
+
+  it('socket keepalive from hardening is intact (pingInterval 20000, pingTimeout 25000)', () => {
+    assert.equal(srv.io.engine.opts.pingInterval, C.SOCKET_PING_INTERVAL_MS);
+    assert.equal(srv.io.engine.opts.pingTimeout, C.SOCKET_PING_TIMEOUT_MS);
+  });
+});
