@@ -9,10 +9,11 @@ const User = require('../models/User');
  *
  * - Tokens: `ExponentPushToken[...]` (or the newer `ExpoPushToken[...]`), max PUSH_TOKENS_MAX
  *   per user, oldest first; storage logic lives here so the route stays thin.
- * - notifyNewMessage(): called after a message is saved (not for duplicates). For each
- *   recipient (participant other than the sender) with 0 live sockets (presence.socketCount,
- *   the offline grace is ignored), send { title: sender username, body: text truncated to
- *   100 chars, data: { chatId }, channelId: 'messages' } to all their tokens.
+ * - notifyNewMessage(): called after a message is saved (not for duplicates). EVERY recipient
+ *   (participant other than the sender) gets { title: sender username, body: text truncated to
+ *   100 chars, data: { chatId }, channelId: 'messages' } on all their tokens, whether or not they
+ *   have live sockets (DEF-012: a backgrounded app keeps its socket ~1.5 min, so socket count is
+ *   not "user can see it"; the mobile app suppresses foreground notifications, web has no tokens).
  *   Fire-and-forget: returns undefined synchronously, never throws or rejects, errors are logged.
  * - Tickets with details.error === 'DeviceNotRegistered' drop that token from the user.
  *   Receipts are not polled (see handoff RTC-N2-01).
@@ -77,18 +78,16 @@ const errMsg = (err) => (err && err.message ? err.message : String(err));
 
 /**
  * @param {object} opts
- * @param {{ socketCount(userId): number }} opts.presence live socket counts
  * @param {Function} [opts.fetch] fetch implementation (tests inject a stub); default global fetch
  * @param {boolean} [opts.enabled=true] false → notifyNewMessage is a no-op
  */
-function createPushNotifier({ presence, fetch: fetchImpl = globalThis.fetch, enabled = true, timeoutMs = PUSH_TIMEOUT_MS } = {}) {
+function createPushNotifier({ fetch: fetchImpl = globalThis.fetch, enabled = true, timeoutMs = PUSH_TIMEOUT_MS } = {}) {
   async function send({ senderId, senderUsername, chatId, text, participantIds }) {
     if (mongoose.connection.readyState !== 1) return;
     const recipients = participantIds.map(String).filter((id) => id !== String(senderId));
-    const offline = recipients.filter((id) => !presence || presence.socketCount(id) === 0);
-    if (offline.length === 0) return;
+    if (recipients.length === 0) return;
 
-    const users = await User.find({ _id: { $in: offline }, 'pushTokens.0': { $exists: true } }, { pushTokens: 1 }).lean();
+    const users = await User.find({ _id: { $in: recipients }, 'pushTokens.0': { $exists: true } }, { pushTokens: 1 }).lean();
     const messages = [];
     const owners = []; // parallel to messages: { userId, token }
     const title = senderUsername || 'New message';
