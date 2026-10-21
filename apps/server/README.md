@@ -45,6 +45,7 @@ Socket.IO: `io(API_URL, { auth: { token } })`; bad/missing token → `connect_er
 - `message:send { chatId, text }` + ack → `{ ok:true, message }` or `{ ok:false, error:{ code, message } }` (`FORBIDDEN`, `MESSAGE_EMPTY`, `MESSAGE_TOO_LONG`, ...).
 - Server → `message:new { message, chat }` to both participants' `user:` rooms (sender included).
 - `MAX_MESSAGE_LENGTH = 2000` exported from `src/constants.js`.
+- Typing (RTC-N1-01): client → `typing { chatId, isTyping }` (no ack); relayed as `typing { chatId, userId, isTyping }` to the other participant only; invalid / non-participant / >10 events/s per socket are dropped silently; nothing persisted.
 
 ## Render
 

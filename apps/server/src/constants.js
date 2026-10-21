@@ -32,6 +32,10 @@ const SEND_RATE_MAX = 10; // per socket
 const SOCKET_PING_INTERVAL_MS = 20000;
 const SOCKET_PING_TIMEOUT_MS = 25000;
 
+/** Server-side typing guard: max events per window per socket (RTC-N1-01). */
+const TYPING_MAX_EVENTS = 10;
+const TYPING_WINDOW_MS = 1000;
+
 module.exports = {
   RATE_LIMITED,
   RATE_LIMITED_MESSAGE,
@@ -41,6 +45,8 @@ module.exports = {
   SEND_RATE_MAX,
   SOCKET_PING_INTERVAL_MS,
   SOCKET_PING_TIMEOUT_MS,
+  TYPING_MAX_EVENTS,
+  TYPING_WINDOW_MS,
   USERNAME_MIN,
   USERNAME_MAX,
   USERNAME_PATTERN,
